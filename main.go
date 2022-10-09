@@ -7,6 +7,7 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/schollz/progressbar/v3"
 )
 
 var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
@@ -24,8 +25,10 @@ var connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err
 func publish(client mqtt.Client, messageCount *int, messageSize *int, targetTopic *string, interval *int) {
 	payload := make([]byte, *messageSize)
 	rand.Read(payload)
+	bar := progressbar.Default(int64(*messageCount))
 
 	for i := 0; i < *messageCount; i++ {
+		bar.Add(1)
 		token := client.Publish(*targetTopic, 1, false, payload)
 		token.Wait()
 		time.Sleep(time.Duration(*interval) * time.Millisecond)
