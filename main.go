@@ -1,26 +1,10 @@
 package main
 
 import (
-	"crypto/rand"
 	"flag"
-	"time"
 
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 	MQTTClient "github.com/pablitovicente/mqtt-load-generator/pkg/MQTTClient"
 )
-
-func publish(client mqtt.Client, messageCount *int, messageSize *int, targetTopic *string, interval *int) {
-	payload := make([]byte, *messageSize)
-	rand.Read(payload)
-	// bar := progressbar.Default(int64(*messageCount))
-
-	for i := 0; i < *messageCount; i++ {
-		// bar.Add(1)
-		token := client.Publish(*targetTopic, 1, false, payload)
-		token.Wait()
-		time.Sleep(time.Duration(*interval) * time.Millisecond)
-	}
-}
 
 func main() {
 	// Argument parsing
@@ -35,8 +19,10 @@ func main() {
 	numberOfClients := flag.Int("n", 1, "Number of concurrent MQTT clients")
 	flag.Parse()
 
+	mqttClients := make([]MQTTClient.Client, 0)
 
 	for i := 1; i <= *numberOfClients; i++ {
+		// Configure the required number of clients
 		mqttClient := MQTTClient.Client{
 			ID: i,
 			Config: MQTTClient.Config{
@@ -50,10 +36,16 @@ func main() {
 				Port: port,
 			},
 		}
-	
-		mqttConnection := mqttClient.New()
-	
-		go publish(mqttConnection, messageCount, messageSize, targetTopic, interval)
+		// Connect
+		mqttClient.Connect()
+		// Keep track of all clients. TODO: implement Go channels to make sure all connections are established before continuing.
+		mqttClients = append(mqttClients, mqttClient)
 	}
+	
+	// Now start publishing
+	for _, c := range mqttClients {
+		go c.Start()
+	}
+	// Dirty hack to block forever. TODO: implement signal Go channels to do this in an idiomatic way.
 	select {}
 }
