@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"flag"
 	"fmt"
+	"os"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -58,7 +59,8 @@ func main() {
 	opts.OnConnectionLost = connectLostHandler
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		panic(token.Error())
+		fmt.Println("Error establishing MQTT connection:", token.Error().Error())
+		os.Exit(1)
 	}
 
 	publish(client, messageCount, messageSize, targetTopic, interval)
