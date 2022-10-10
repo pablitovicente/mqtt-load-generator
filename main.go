@@ -40,17 +40,16 @@ func main() {
 	messageCount := flag.Int("c", 1000, "Number of messages to send")
 	messageSize := flag.Int("s", 100, "Size in bytes of the message payload")
 	interval := flag.Int("i", 1, "Milliseconds to wait between messages")
-	targetTopic := flag.String("topic", "/load", "Target MQTT topic to publish messages to")
+	targetTopic := flag.String("t", "/load", "Target MQTT topic to publish messages to")
 	username := flag.String("u", "", "MQTT username")
-	password := flag.String("password", "", "MQTT password")
+	password := flag.String("P", "", "MQTT password")
+	host := flag.String("h", "localhost", "MQTT host")
+	port := flag.Int("p", 1883, "MQTT port")
 	clientId := flag.String("id", "mqtt_load_generator", "MQTT clientID")
 	flag.Parse()
 
-
-	var broker = "localhost"
-	var port = 1883
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", broker, port))
+	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", *host, *port))
 	opts.SetClientID(*clientId)
 	opts.SetUsername(*username)
 	opts.SetPassword(*password)

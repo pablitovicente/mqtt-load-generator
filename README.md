@@ -20,5 +20,5 @@ Future iterations will switch to use Go routines instead of requiring multiple r
 Example to publish 100,000 messages with 1KB payload size with a 1 ms wait between messages using an MQTT client id of go_mqtt_1
 
 ```bash
-/mqtt-benchmark -c 100000 -s 1000 -topic /golang/pub -u secret -password mega_secret -i 1 -id go_mqtt_1
+/mqtt-benchmark -c 100000 -s 1000 -t /golang/pub -u secret -P mega_secret -i 1 -id go_mqtt_1 -h localhost -p 1883
 ```
