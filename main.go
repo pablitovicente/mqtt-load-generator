@@ -27,13 +27,13 @@ func main() {
 			ID: i,
 			Config: MQTTClient.Config{
 				MessageCount: messageCount,
-				MessageSize: messageSize,
-				Interval: interval,
-				TargetTopic: targetTopic,
-				Username: username,
-				Password: password,
-				Host: host,
-				Port: port,
+				MessageSize:  messageSize,
+				Interval:     interval,
+				TargetTopic:  targetTopic,
+				Username:     username,
+				Password:     password,
+				Host:         host,
+				Port:         port,
 			},
 		}
 		// Connect
@@ -41,7 +41,7 @@ func main() {
 		// Keep track of all clients. TODO: implement Go channels to make sure all connections are established before continuing.
 		mqttClients = append(mqttClients, mqttClient)
 	}
-	
+
 	// Now start publishing
 	for _, c := range mqttClients {
 		go c.Start()
