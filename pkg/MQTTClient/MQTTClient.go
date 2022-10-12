@@ -24,14 +24,15 @@ type Client struct {
 	ID         int
 	Config     Config
 	Connection mqtt.Client
+	Updates chan int
 }
 
 var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
-	fmt.Println("Connected")
+	// optionsReader := client.OptionsReader()
+	// fmt.Printf("Connected/Reconnected client with ID: '%s'\n", optionsReader.ClientID())
 }
 
 func (c *Client) Connect() {
-	fmt.Printf("Client id is %d \n", c.ID)
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", *c.Config.Host, *c.Config.Port))
 	opts.SetClientID(fmt.Sprintf("mqtt-load-generator-%d", c.ID))
@@ -39,9 +40,12 @@ func (c *Client) Connect() {
 	opts.SetPassword(*c.Config.Password)
 	opts.OnConnect = connectHandler
 	opts.OnConnectionLost = func(client mqtt.Client, err error) {
-		fmt.Printf("Connection lost for client %d message: %v", c.ID, err)
+		optionsReader := client.OptionsReader()
+		fmt.Printf("Connection lost for client '%s' message: %v\n", optionsReader.ClientID(), err.Error())
 	}
+
 	mqttClient := mqtt.NewClient(opts)
+
 	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
 		fmt.Println("Error establishing MQTT connection:", token.Error().Error())
 		os.Exit(1)
@@ -58,7 +62,7 @@ func (c Client) Start() {
 		token := c.Connection.Publish(*c.Config.TargetTopic, 1, false, payload)
 		token.Wait()
 		time.Sleep(time.Duration(*c.Config.Interval) * time.Millisecond)
+		c.Updates <- 1
 	}
-	fmt.Println("Done publishing for client:", c.ID)
 	c.Connection.Disconnect(1)
 }

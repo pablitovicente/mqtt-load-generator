@@ -2,8 +2,10 @@ package main
 
 import (
 	"flag"
+	"fmt"
 
 	MQTTClient "github.com/pablitovicente/mqtt-load-generator/pkg/MQTTClient"
+	"github.com/schollz/progressbar/v3"
 )
 
 func main() {
@@ -17,35 +19,41 @@ func main() {
 	host := flag.String("h", "localhost", "MQTT host")
 	port := flag.Int("p", 1883, "MQTT port")
 	numberOfClients := flag.Int("n", 1, "Number of concurrent MQTT clients")
+
 	flag.Parse()
 
-	mqttClients := make([]MQTTClient.Client, 0)
+	// General Client Config
+	mqttClientConfig := MQTTClient.Config{
+		MessageCount: messageCount,
+		MessageSize:  messageSize,
+		Interval:     interval,
+		TargetTopic:  targetTopic,
+		Username:     username,
+		Password:     password,
+		Host:         host,
+		Port:         port,
+	}
+	
+	updates := make(chan int)
 
-	for i := 1; i <= *numberOfClients; i++ {
-		// Configure the required number of clients
-		mqttClient := MQTTClient.Client{
-			ID: i,
-			Config: MQTTClient.Config{
-				MessageCount: messageCount,
-				MessageSize:  messageSize,
-				Interval:     interval,
-				TargetTopic:  targetTopic,
-				Username:     username,
-				Password:     password,
-				Host:         host,
-				Port:         port,
-			},
+	pool := MQTTClient.Pool{
+		SetupDone: make(chan struct{}),
+		MqttClients: make([]MQTTClient.Client, 0),
+	}
+
+	pool.New(numberOfClients, mqttClientConfig, updates)
+	<- pool.SetupDone
+	fmt.Println("All clients connected....")
+
+	pool.Start()
+
+	bar := progressbar.Default(int64(*messageCount) * int64(*numberOfClients))
+
+	go func (updates chan int) {
+		for update := range updates {
+			bar.Add(update)
 		}
-		// Connect
-		mqttClient.Connect()
-		// Keep track of all clients. TODO: implement Go channels to make sure all connections are established before continuing.
-		mqttClients = append(mqttClients, mqttClient)
-	}
+	}(updates)
 
-	// Now start publishing
-	for _, c := range mqttClients {
-		go c.Start()
-	}
-	// Dirty hack to block forever. TODO: implement signal Go channels to do this in an idiomatic way.
 	select {}
 }
