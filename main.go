@@ -1,40 +1,13 @@
 package main
 
 import (
-	"crypto/rand"
 	"flag"
 	"fmt"
-	"os"
-	"time"
+	"sync"
 
-	mqtt "github.com/eclipse/paho.mqtt.golang"
+	MQTTClient "github.com/pablitovicente/mqtt-load-generator/pkg/MQTTClient"
 	"github.com/schollz/progressbar/v3"
 )
-
-var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
-	fmt.Printf("Received message: %s from topic: %s\n", msg.Payload(), msg.Topic())
-}
-
-var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
-	fmt.Println("Connected")
-}
-
-var connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
-	fmt.Printf("Connect lost: %v", err)
-}
-
-func publish(client mqtt.Client, messageCount *int, messageSize *int, targetTopic *string, interval *int) {
-	payload := make([]byte, *messageSize)
-	rand.Read(payload)
-	bar := progressbar.Default(int64(*messageCount))
-
-	for i := 0; i < *messageCount; i++ {
-		bar.Add(1)
-		token := client.Publish(*targetTopic, 1, false, payload)
-		token.Wait()
-		time.Sleep(time.Duration(*interval) * time.Millisecond)
-	}
-}
 
 func main() {
 	// Argument parsing
@@ -46,22 +19,46 @@ func main() {
 	password := flag.String("P", "", "MQTT password")
 	host := flag.String("h", "localhost", "MQTT host")
 	port := flag.Int("p", 1883, "MQTT port")
-	clientId := flag.String("id", "mqtt_load_generator", "MQTT clientID")
+	numberOfClients := flag.Int("n", 1, "Number of concurrent MQTT clients")
+
 	flag.Parse()
 
-	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", *host, *port))
-	opts.SetClientID(*clientId)
-	opts.SetUsername(*username)
-	opts.SetPassword(*password)
-	opts.SetDefaultPublishHandler(messagePubHandler)
-	opts.OnConnect = connectHandler
-	opts.OnConnectionLost = connectLostHandler
-	client := mqtt.NewClient(opts)
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		fmt.Println("Error establishing MQTT connection:", token.Error().Error())
-		os.Exit(1)
+	// General Client Config
+	mqttClientConfig := MQTTClient.Config{
+		MessageCount: messageCount,
+		MessageSize:  messageSize,
+		Interval:     interval,
+		TargetTopic:  targetTopic,
+		Username:     username,
+		Password:     password,
+		Host:         host,
+		Port:         port,
 	}
+	
+	updates := make(chan int)
 
-	publish(client, messageCount, messageSize, targetTopic, interval)
+	pool := MQTTClient.Pool{
+		SetupDone: make(chan struct{}),
+		MqttClients: make([]*MQTTClient.Client, 0),
+	}
+	fmt.Printf("Setting up %d MQTT clients\n", *numberOfClients)
+	pool.New(numberOfClients, mqttClientConfig, updates)
+	// Wait until all the setup is done
+	<- pool.SetupDone
+	fmt.Println("All clients connected, starting publishing messages")
+	var wg sync.WaitGroup
+	pool.Start(&wg)
+
+	bar := progressbar.Default(int64(*messageCount) * int64(*numberOfClients))
+
+	go func (updates chan int) {
+		for update := range updates {
+			bar.Add(update)
+		}
+	}(updates)
+
+	wg.Wait()
+	// Hacky way of avoiding the progress bar going away.
+	// Todo: check why this happens
+	bar.Add(0)
 }
