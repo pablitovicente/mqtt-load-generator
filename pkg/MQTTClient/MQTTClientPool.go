@@ -1,5 +1,7 @@
 package MQTTClient
 
+import "sync"
+
 type Pool struct {
 	MqttClients []*Client
 	SetupDone chan struct{}
@@ -27,8 +29,9 @@ func (p *Pool) New(numOfClients *int, clientConfig Config, updates chan int) {
 	close(p.SetupDone)
 }
 
-func (p *Pool) Start() {
+func (p *Pool) Start(wg *sync.WaitGroup) {
 	for _, c := range p.MqttClients {
-		go c.Start()
+		wg.Add(1)
+		go c.Start(wg)
 	}
 }

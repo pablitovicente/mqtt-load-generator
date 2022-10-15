@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -53,7 +54,8 @@ func (c *Client) Connect() {
 	c.Connection = mqttClient
 }
 
-func (c Client) Start() {
+func (c Client) Start(wg *sync.WaitGroup) {
+	defer wg.Done()
 	payload := make([]byte, *c.Config.MessageSize)
 	rand.Read(payload)
 

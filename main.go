@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"sync"
 
 	MQTTClient "github.com/pablitovicente/mqtt-load-generator/pkg/MQTTClient"
 	"github.com/schollz/progressbar/v3"
@@ -45,7 +46,8 @@ func main() {
 	// Wait until all the setup is done
 	<- pool.SetupDone
 	fmt.Println("All clients connected, starting publishing messages")
-	pool.Start()
+	var wg sync.WaitGroup
+	pool.Start(&wg)
 
 	bar := progressbar.Default(int64(*messageCount) * int64(*numberOfClients))
 
@@ -55,5 +57,5 @@ func main() {
 		}
 	}(updates)
 
-	select {}
+	wg.Wait()
 }
