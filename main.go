@@ -58,4 +58,7 @@ func main() {
 	}(updates)
 
 	wg.Wait()
+	// Hacky way of avoiding the progress bar going away.
+	// Todo: check why this happens
+	bar.Add(0)
 }
