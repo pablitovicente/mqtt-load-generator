@@ -1,9 +1,7 @@
-# mqtt-benchmark
+# MQTT LOAD GENERATOR
 
-A very simple MQTT benchmark tool written in Go
-
-It's very light on resources as it is intended to be run multiple times to benchmark MQTT brokers and to easily generate multiple loads by simply running the command multiple times.
-Future iterations will switch to use Go routines instead of requiring multiple runs.
+A very simple MQTT load generator tool written in Go. The tool will first establish all the connections to the target broker
+and only then start the publishing of messages.
 
 ## Requirements
 
@@ -11,14 +9,23 @@ Future iterations will switch to use Go routines instead of requiring multiple r
 
 ## Build
 
-- `go build .` will generate the binary `mqtt-benchmark`
+- `go build .` will generate the binary `mqtt-load-generator`
 
 ## Run
 
-- `./mqtt-benchmark --help` will show all the supported options
+- `./mqtt-load-generator --help` will show all the supported options
 
-Example to publish 100,000 messages with 1KB payload size with a 1 ms wait between messages using an MQTT client id of go_mqtt_1
+Example to publish 1000 messages with 1KB payload size with a 1 ms wait between messages using 100 concurrent clients
 
 ```bash
-/mqtt-benchmark -c 100000 -s 1000 -t /golang/pub -u secret -P mega_secret -i 1 -id go_mqtt_1 -h localhost -p 1883
+./mqtt-load-generator  -c 1000 -s 1000 -t /golang/pub -i 1 -p 1883 -n 100 -u secret -P mega_secret -h localhost -p 1883
 ```
+
+## TODO
+
+- Use more idiomatic Go style
+- Improve error handling
+- Update project structure to use a cmd folder to have different commands for
+  - publishing
+  - counting received messages
+- Add tests (this should be first :P)
