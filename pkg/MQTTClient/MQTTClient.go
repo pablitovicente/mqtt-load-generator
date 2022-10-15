@@ -35,6 +35,7 @@ func (c *Client) Connect() {
 	opts.SetClientID(fmt.Sprintf("mqtt-load-generator-%d", c.ID))
 	opts.SetUsername(*c.Config.Username)
 	opts.SetPassword(*c.Config.Password)
+	opts.CleanSession = true
 	// We use a closure so we can have access to the scope if required
 	opts.OnConnect = func(client mqtt.Client) {
 		c.ConnectionDone <- struct{}{}
@@ -43,6 +44,11 @@ func (c *Client) Connect() {
 		optionsReader := client.OptionsReader()
 		fmt.Printf("Connection lost for client '%s' message: %v\n", optionsReader.ClientID(), err.Error())
 	}
+
+	opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
+		// We just send a 1 for each received message
+    c.Updates <- 1
+	})
 
 	mqttClient := mqtt.NewClient(opts)
 
@@ -66,4 +72,10 @@ func (c Client) Start(wg *sync.WaitGroup) {
 		c.Updates <- 1
 	}
 	c.Connection.Disconnect(1)
+}
+
+func (c Client) Subscribe(topic string) {
+    token := c.Connection.Subscribe(topic, 1, nil)
+    token.Wait()
+    fmt.Printf("Subscribed to topic '%s'\n", topic)
 }
