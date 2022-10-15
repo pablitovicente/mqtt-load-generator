@@ -34,24 +34,24 @@ func main() {
 		Host:         host,
 		Port:         port,
 	}
-	
+
 	updates := make(chan int)
 
 	pool := MQTTClient.Pool{
-		SetupDone: make(chan struct{}),
+		SetupDone:   make(chan struct{}),
 		MqttClients: make([]*MQTTClient.Client, 0),
 	}
 	fmt.Printf("Setting up %d MQTT clients\n", *numberOfClients)
 	pool.New(numberOfClients, mqttClientConfig, updates)
 	// Wait until all the setup is done
-	<- pool.SetupDone
+	<-pool.SetupDone
 	fmt.Println("All clients connected, starting publishing messages")
 	var wg sync.WaitGroup
 	pool.Start(&wg)
 
 	bar := progressbar.Default(int64(*messageCount) * int64(*numberOfClients))
 
-	go func (updates chan int) {
+	go func(updates chan int) {
 		for update := range updates {
 			bar.Add(update)
 		}

@@ -22,10 +22,10 @@ type Config struct {
 }
 
 type Client struct {
-	ID         int
-	Config     Config
-	Connection mqtt.Client
-	Updates chan int
+	ID             int
+	Config         Config
+	Connection     mqtt.Client
+	Updates        chan int
 	ConnectionDone chan struct{}
 }
 
