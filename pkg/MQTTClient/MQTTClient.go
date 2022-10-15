@@ -25,11 +25,7 @@ type Client struct {
 	Config     Config
 	Connection mqtt.Client
 	Updates chan int
-}
-
-var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
-	// optionsReader := client.OptionsReader()
-	// fmt.Printf("Connected/Reconnected client with ID: '%s'\n", optionsReader.ClientID())
+	ConnectionDone chan struct{}
 }
 
 func (c *Client) Connect() {
@@ -38,7 +34,10 @@ func (c *Client) Connect() {
 	opts.SetClientID(fmt.Sprintf("mqtt-load-generator-%d", c.ID))
 	opts.SetUsername(*c.Config.Username)
 	opts.SetPassword(*c.Config.Password)
-	opts.OnConnect = connectHandler
+	// We use a closure so we can have access to the scope if required
+	opts.OnConnect = func(client mqtt.Client) {
+		c.ConnectionDone <- struct{}{}
+	}
 	opts.OnConnectionLost = func(client mqtt.Client, err error) {
 		optionsReader := client.OptionsReader()
 		fmt.Printf("Connection lost for client '%s' message: %v\n", optionsReader.ClientID(), err.Error())

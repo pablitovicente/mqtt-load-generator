@@ -38,13 +38,13 @@ func main() {
 
 	pool := MQTTClient.Pool{
 		SetupDone: make(chan struct{}),
-		MqttClients: make([]MQTTClient.Client, 0),
+		MqttClients: make([]*MQTTClient.Client, 0),
 	}
-
+	fmt.Printf("Setting up %d MQTT clients\n", *numberOfClients)
 	pool.New(numberOfClients, mqttClientConfig, updates)
+	// Wait until all the setup is done
 	<- pool.SetupDone
-	fmt.Println("All clients connected....")
-
+	fmt.Println("All clients connected, starting publishing messages")
 	pool.Start()
 
 	bar := progressbar.Default(int64(*messageCount) * int64(*numberOfClients))
