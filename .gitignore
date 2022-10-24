@@ -1,3 +1,4 @@
 mqtt-load-generator
 cmd/checker/checker
 .vscode/
+.idea
