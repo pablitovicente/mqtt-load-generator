@@ -35,18 +35,21 @@ To count incoming messages you can use the checker
 ## Docker image
 
 To create a docker image for the load generator:
-```
+
+```bash
 docker build -t mqtt-load-generator .
 ```
 
 To run a docker container from it reuse the same command line like above with:
-```
+
+```bash
 docker run --rm -it mqtt-load-generator -c 1000 -s 1000 -t /golang/pub -i 1 -n 100 -u secret -P mega_secret -h localhost -p 1883 
 ```
 
 To run the image in a Kubernetes cluster 
 (e.g., to creating the load nearer to cluster resources by using cluster-local addresses):
-```
+
+```bash
 kubectl run mqtt-load-generator --image=jforge/mqtt-load-generator  \
   -- -h <mqtt-broker-address> -p 1883 -u secret -P mega_secret \
      -c 1000 -s 1000 -t /golang/pub -i 1 -n 100
