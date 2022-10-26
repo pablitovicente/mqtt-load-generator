@@ -19,6 +19,7 @@ type Config struct {
 	Password     *string
 	Host         *string
 	Port         *int
+	IdAsSubTopic *bool
 }
 
 type Client struct {
@@ -65,10 +66,20 @@ func (c Client) Start(wg *sync.WaitGroup) {
 	payload := make([]byte, *c.Config.MessageSize)
 	rand.Read(payload)
 
+	var topic string
+	if (*c.Config.IdAsSubTopic) {
+		topic = fmt.Sprintf("%s/%d", *c.Config.TargetTopic, c.ID)
+	} else {
+		topic = *c.Config.TargetTopic
+	}
+
 	for i := 0; i < *c.Config.MessageCount; i++ {
-		token := c.Connection.Publish(*c.Config.TargetTopic, 1, false, payload)
+		token := c.Connection.Publish(topic, 1, false, payload)
 		token.Wait()
-		time.Sleep(time.Duration(*c.Config.Interval) * time.Millisecond)
+		// If the interval is zero skip this logic
+		if(*c.Config.Interval > 0) {
+			time.Sleep(time.Duration(*c.Config.Interval) * time.Millisecond)
+		}
 		c.Updates <- 1
 	}
 	c.Connection.Disconnect(1)
