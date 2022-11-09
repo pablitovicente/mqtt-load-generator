@@ -1,7 +1,7 @@
 package MQTTClient
 
 import (
-	"crypto/rand"
+	"math/rand"
 	"fmt"
 	"os"
 	"sync"
@@ -18,6 +18,7 @@ type Config struct {
 	Username     *string
 	Password     *string
 	Host         *string
+	Schedule		 *string
 	Port         *int
 	IdAsSubTopic *bool
 }
@@ -76,9 +77,19 @@ func (c Client) Start(wg *sync.WaitGroup) {
 	for i := 0; i < *c.Config.MessageCount; i++ {
 		token := c.Connection.Publish(topic, 1, false, payload)
 		token.Wait()
+
 		// If the interval is zero skip this logic
-		if(*c.Config.Interval > 0) {
-			time.Sleep(time.Duration(*c.Config.Interval) * time.Millisecond)
+		interval := float64(*c.Config.Interval)
+		if(interval > 0) {
+			// Default case is flat
+			sleepTime := interval 
+			if (*c.Config.Schedule == "normal") {
+				sleepTime = interval + interval * rand.NormFloat64() / 2
+
+			} else if (*c.Config.Schedule == "random") {
+				sleepTime = interval * 2 * rand.Float64()
+			}
+			time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 		}
 		c.Updates <- 1
 	}
