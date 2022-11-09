@@ -35,8 +35,8 @@ func main() {
 	updates := make(chan int)
 
 	mqttClient := MQTTClient.Client{
-		ID:     rand.Intn(100000),
-		Config: mqttClientConfig,
+		ID:      rand.Intn(100000),
+		Config:  mqttClientConfig,
 		Updates: updates,
 	}
 

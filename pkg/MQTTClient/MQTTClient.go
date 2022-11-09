@@ -1,8 +1,8 @@
 package MQTTClient
 
 import (
-	"math/rand"
 	"fmt"
+	"math/rand"
 	"os"
 	"sync"
 	"time"
@@ -18,7 +18,7 @@ type Config struct {
 	Username     *string
 	Password     *string
 	Host         *string
-	Schedule		 *string
+	Schedule     *string
 	Port         *int
 	IdAsSubTopic *bool
 }
@@ -49,7 +49,7 @@ func (c *Client) Connect() {
 
 	opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
 		// We just send a 1 for each received message
-    c.Updates <- 1
+		c.Updates <- 1
 	})
 
 	mqttClient := mqtt.NewClient(opts)
@@ -68,7 +68,7 @@ func (c Client) Start(wg *sync.WaitGroup) {
 	rand.Read(payload)
 
 	var topic string
-	if (*c.Config.IdAsSubTopic) {
+	if *c.Config.IdAsSubTopic {
 		topic = fmt.Sprintf("%s/%d", *c.Config.TargetTopic, c.ID)
 	} else {
 		topic = *c.Config.TargetTopic
@@ -80,13 +80,13 @@ func (c Client) Start(wg *sync.WaitGroup) {
 
 		// If the interval is zero skip this logic
 		interval := float64(*c.Config.Interval)
-		if(interval > 0) {
+		if interval > 0 {
 			// Default case is flat
-			sleepTime := interval 
-			if (*c.Config.Schedule == "normal") {
-				sleepTime = interval + interval * rand.NormFloat64() / 2
+			sleepTime := interval
+			if *c.Config.Schedule == "normal" {
+				sleepTime = interval + interval*rand.NormFloat64()/2
 
-			} else if (*c.Config.Schedule == "random") {
+			} else if *c.Config.Schedule == "random" {
 				sleepTime = interval * 2 * rand.Float64()
 			}
 			time.Sleep(time.Duration(sleepTime) * time.Millisecond)
@@ -97,7 +97,7 @@ func (c Client) Start(wg *sync.WaitGroup) {
 }
 
 func (c Client) Subscribe(topic string) {
-    token := c.Connection.Subscribe(topic, 1, nil)
-    token.Wait()
-    fmt.Printf("Subscribed to topic '%s'\n", topic)
+	token := c.Connection.Subscribe(topic, 1, nil)
+	token.Wait()
+	fmt.Printf("Subscribed to topic '%s'\n", topic)
 }
