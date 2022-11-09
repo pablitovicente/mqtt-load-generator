@@ -14,7 +14,7 @@ func main() {
 	messageCount := flag.Int("c", 1000, "Number of messages to send")
 	messageSize := flag.Int("s", 100, "Size in bytes of the message payload")
 	interval := flag.Int("i", 1, "Milliseconds to wait between messages")
-	schedule := flag.String("z", "normal", "Distribution of time between messages")
+	schedule := flag.String("z", "normal", "Distribution of time between messages: 'flat': always wait Interval between messages, 'normal': wait a random amount between messages with mean equal to the interval and stdev to half interval, 'random': wait a random amount between messages with mean equal to the interval.")
 	targetTopic := flag.String("t", "/load", "Target MQTT topic to publish messages to")
 	username := flag.String("u", "", "MQTT username")
 	password := flag.String("P", "", "MQTT password")
@@ -30,7 +30,7 @@ func main() {
 		MessageCount: messageCount,
 		MessageSize:  messageSize,
 		Interval:     interval,
-		Schedule:			schedule,
+		Schedule:     schedule,
 		TargetTopic:  targetTopic,
 		Username:     username,
 		Password:     password,
