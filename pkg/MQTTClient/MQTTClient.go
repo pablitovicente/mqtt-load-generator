@@ -21,6 +21,7 @@ type Config struct {
 	Schedule     *string
 	Port         *int
 	IdAsSubTopic *bool
+	QoS          *int
 }
 
 type Client struct {
@@ -75,7 +76,7 @@ func (c Client) Start(wg *sync.WaitGroup) {
 	}
 
 	for i := 0; i < *c.Config.MessageCount; i++ {
-		token := c.Connection.Publish(topic, 1, false, payload)
+		token := c.Connection.Publish(topic, byte(*c.Config.QoS), false, payload)
 		token.Wait()
 
 		// If the interval is zero skip this logic
