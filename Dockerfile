@@ -11,7 +11,7 @@ RUN go mod download
 COPY cmd/load_generator/main.go /app
 COPY pkg/ /app/pkg
 
-RUN go build -o /mqtt-load-generator
+RUN CGO_ENABLED=0 go build -o /mqtt-load-generator
 
 FROM alpine:3
 
