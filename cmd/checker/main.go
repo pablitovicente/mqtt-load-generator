@@ -17,8 +17,13 @@ func main() {
 	password := flag.String("P", "", "MQTT password")
 	host := flag.String("h", "localhost", "MQTT host")
 	port := flag.Int("p", 1883, "MQTT port")
+	qos := flag.Int("q", 1, "MQTT QoS used by all clients")
 
 	flag.Parse()
+
+	if *qos < 0 || *qos > 2 {
+		panic("QoS should be any of [0, 1, 2]")
+	}
 
 	fmt.Println("press ctrl+c to exit")
 
@@ -29,6 +34,7 @@ func main() {
 		Password:    password,
 		Host:        host,
 		Port:        port,
+		QoS:         qos,
 	}
 
 	rand.Seed(time.Now().UnixNano())

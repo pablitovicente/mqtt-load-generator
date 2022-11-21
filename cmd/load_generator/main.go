@@ -22,8 +22,13 @@ func main() {
 	port := flag.Int("p", 1883, "MQTT port")
 	numberOfClients := flag.Int("n", 1, "Number of concurrent MQTT clients")
 	idAsSubTopic := flag.Bool("suffix", false, "If set to true the MQTT client ID will be used as an additional level to the topic specified by 't'")
+	qos := flag.Int("q", 1, "MQTT QoS used by all clients")
 
 	flag.Parse()
+
+	if *qos < 0 || *qos > 2 {
+		panic("QoS should be any of [0, 1, 2]")
+	}
 
 	// General Client Config
 	mqttClientConfig := MQTTClient.Config{
@@ -37,6 +42,7 @@ func main() {
 		Host:         host,
 		Port:         port,
 		IdAsSubTopic: idAsSubTopic,
+		QoS:          qos,
 	}
 
 	updates := make(chan int)
