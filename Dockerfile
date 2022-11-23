@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM golang:1.19.2-alpine3.16
+FROM golang:1.19.2-alpine3.16 AS builder
 
 WORKDIR /app
 
@@ -11,6 +11,11 @@ RUN go mod download
 COPY cmd/load_generator/main.go /app
 COPY pkg/ /app/pkg
 
-RUN go build -o /mqtt-load-generator
+RUN CGO_ENABLED=0 go build -o /mqtt-load-generator
 
+FROM alpine:3
+
+COPY --from=builder /mqtt-load-generator /mqtt-load-generator
+
+WORKDIR /app
 ENTRYPOINT [ "/mqtt-load-generator" ]
