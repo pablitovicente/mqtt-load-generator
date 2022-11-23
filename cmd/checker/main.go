@@ -56,5 +56,17 @@ func main() {
 		}
 	}(updates)
 
+	// There's some issue with bar update when traffic is not constant
+	// so this go routine updates the bar with 0 just to get the total numbers right
+	ticker := time.NewTicker(1 * time.Second)
+	go func() {
+		for {
+			// Block until the clock ticks
+			<-ticker.C
+			// Update bar with 0 to update total
+			bar.Add(0)
+		}
+	}()
+
 	select {}
 }
