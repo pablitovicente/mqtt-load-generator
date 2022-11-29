@@ -1,0 +1,41 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mqtt-load-generator
+  labels:
+    app: mqtt-load-generator
+spec:
+  completions: 1 # how many runs of the mqtt-load-generator do you want to run
+  parallelism: 1 # how many should run in parallel
+  ttlSecondsAfterFinished: 1800 # how many seconds until the job is cleaned up
+  template:
+    metadata:
+      labels:
+        app: mqtt-load-generator
+    spec:
+      containers:
+      - name: mqtt-load-generator
+        image: pgschk/mqtt-load-generator:latest
+        args:
+        - -h
+        - mqtt # hostname of mqtt server
+        - -p
+        - "1883" # port of mqtt server
+        - -u
+        - secret # username
+        - -P
+        -  mega_secret # password
+        - -c
+        - "1000" # number of messages per client
+        - -s
+        - "1000" # size per message in byte
+        - -t
+        - /golang/pub # target topic to publish to
+        - -i
+        - "1" # interval between published messages in ms
+        - -n
+        - "100" # numer of parallel clients
+      restartPolicy: Never
+  backoffLimit: 5
+  
