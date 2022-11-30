@@ -61,6 +61,37 @@ kubectl run mqtt-load-generator --image=jforge/mqtt-load-generator  \
      -c 1000 -s 1000 -t /golang/pub -i 1 -n 100
 ```
 
+
+## Run as Kubernetes job
+
+To run as a Kubernetes job you can adjust the file `k8s/job.yaml` and apply it with:
+ 
+ ```bash
+ kubectl create -f k8s/job.yaml
+ ```
+
+To view the log output use: 
+```bash
+kubectl logs -f -l job-name=mqtt-load-generator
+```
+
+To restart when one run is finished you can use:
+```bash
+kubectl delete jobs.batch -l app=mqtt-load-generator ; kubectl create -f k8s/job.yaml
+```
+
+### Run multiple jobs parallel
+
+To run multiple jobs in parallel you adjust parameter `spec.parallelism` in `k8s/job.yaml`
+
+### Delete multiple jobs
+
+To clean up all mqtt-load-generator jobs you can run:
+```bash
+kubectl delete jobs.batch -l app=mqtt-load-generator
+```
+
+
 ## TODO
 
 - Use more idiomatic Go style
