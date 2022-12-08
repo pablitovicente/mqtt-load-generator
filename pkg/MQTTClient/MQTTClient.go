@@ -25,7 +25,8 @@ type Config struct {
 }
 
 type Client struct {
-	ID             int
+	ID             string
+	SubTopicId     int
 	Config         Config
 	Connection     mqtt.Client
 	Updates        chan int
@@ -35,7 +36,7 @@ type Client struct {
 func (c *Client) Connect() {
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", *c.Config.Host, *c.Config.Port))
-	opts.SetClientID(fmt.Sprintf("mqtt-load-generator-%d", c.ID))
+	opts.SetClientID(fmt.Sprintf("mqtt-load-generator-%s", c.ID))
 	opts.SetUsername(*c.Config.Username)
 	opts.SetPassword(*c.Config.Password)
 	opts.CleanSession = true
@@ -70,7 +71,7 @@ func (c Client) Start(wg *sync.WaitGroup) {
 
 	var topic string
 	if *c.Config.IdAsSubTopic {
-		topic = fmt.Sprintf("%s/%d", *c.Config.TargetTopic, c.ID)
+		topic = fmt.Sprintf("%s/%d", *c.Config.TargetTopic, c.SubTopicId)
 	} else {
 		topic = *c.Config.TargetTopic
 	}

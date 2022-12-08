@@ -8,6 +8,8 @@ import (
 
 	MQTTClient "github.com/pablitovicente/mqtt-load-generator/pkg/MQTTClient"
 	"github.com/schollz/progressbar/v3"
+
+	"github.com/google/uuid"
 )
 
 func main() {
@@ -41,7 +43,7 @@ func main() {
 	updates := make(chan int)
 
 	mqttClient := MQTTClient.Client{
-		ID:      rand.Intn(100000),
+		ID:      uuid.NewString(),
 		Config:  mqttClientConfig,
 		Updates: updates,
 	}
