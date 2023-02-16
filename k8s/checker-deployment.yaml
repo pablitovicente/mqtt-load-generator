@@ -1,0 +1,35 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mqtt-checker
+spec:
+  selector:
+    matchLabels:
+      app: mqtt-checker
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: mqtt-checker
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+      - name: mqtt-checker
+        image: pgschk/mqtt-load-generator:latest
+        command:
+        - /checker
+        args:
+        - -h
+        -  mqtt # hostname of mqtt server
+        - -p
+        - "1883" # port of mqtt server
+        - -u
+        - secret # username
+        - -P
+        -  mega_secret # password
+        - -t
+        - /golang/pub # target topic to subscribe to
+        - --disable-bar # disable interactive bar

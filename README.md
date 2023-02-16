@@ -46,14 +46,25 @@ To create a docker image for the load generator:
 docker build -t mqtt-load-generator .
 ```
 
+### Running the load generator
+
 To run a docker container from it reuse the same command line like above with:
 
 ```bash
 docker run --rm -it mqtt-load-generator -c 1000 -s 1000 -t /golang/pub -i 1 -n 100 -u secret -P mega_secret -h localhost -p 1883 
 ```
 
-To run the image in a Kubernetes cluster
+### Running the checker
+
+```bash
+docker run --entrypoint /checker --rm -it mqtt-load-generator -t /golang/pub -u secret -P mega_secret -h localhost -p 1883 
+```
+
+## Run on Kubernetes
+Here are a few methods of running the image in a Kubernetes cluster
 (e.g., to creating the load nearer to cluster resources by using cluster-local addresses):
+
+### Running the load generator
 
 ```bash
 kubectl run mqtt-load-generator --image=jforge/mqtt-load-generator  \
@@ -61,9 +72,15 @@ kubectl run mqtt-load-generator --image=jforge/mqtt-load-generator  \
      -c 1000 -s 1000 -t /golang/pub -i 1 -n 100
 ```
 
+### Running the load checker
 
-## Run as Kubernetes job
+```bash
+kubectl run mqtt-load-checker --image=pgschk/mqtt-load-generator --command \
+  -- /checker -h <mqtt-broker-address> -p 1883 -u secret -P mega_secret \
+      -t /golang/pub --disable-bar
+```
 
+### Running the load generator as a Kubernetes Job
 To run as a Kubernetes job you can adjust the file `k8s/job.yaml` and apply it with:
  
  ```bash
@@ -80,17 +97,21 @@ To restart when one run is finished you can use:
 kubectl delete jobs.batch -l app=mqtt-load-generator ; kubectl create -f k8s/job.yaml
 ```
 
-### Run multiple jobs parallel
+**Run multiple jobs parallel**
 
 To run multiple jobs in parallel you adjust parameter `spec.parallelism` in `k8s/job.yaml`
 
-### Delete multiple jobs
+**Delete multiple jobs**
 
 To clean up all mqtt-load-generator jobs you can run:
 ```bash
 kubectl delete jobs.batch -l app=mqtt-load-generator
 ```
 
+### Running the load checker as Kubernetes Deployment
+ ```bash
+ kubectl create -f k8s/checker-deployment.yaml
+ ```
 
 ## TODO
 
