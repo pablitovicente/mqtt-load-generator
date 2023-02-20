@@ -21,7 +21,7 @@ func main() {
 	host := flag.String("h", "localhost", "MQTT host")
 	port := flag.Int("p", 1883, "MQTT port")
 	numberOfClients := flag.Int("n", 1, "Number of concurrent MQTT clients")
-	idAsSubTopic := flag.Bool("suffix", false, "If set to true the MQTT client ID will be used as an additional level to the topic specified by 't'")
+	idAsSubTopic := flag.Bool("suffix", false, "If set to true integers will be used as sub-topic to the topic specified by 't'. The range goes from 1 to N where N is the max number of configured concurrent clients.")
 	qos := flag.Int("q", 1, "MQTT QoS used by all clients")
 
 	flag.Parse()
