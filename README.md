@@ -120,3 +120,9 @@ kubectl delete jobs.batch -l app=mqtt-load-generator
 - Support mTlS
 - Improve error handling
 - Add tests (this should be first :P)
+
+## Contributors
+
+<a href="https://github.com/pablitovicente/mqtt-load-generator/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=pablitovicente/mqtt-load-generator" />
+</a>
