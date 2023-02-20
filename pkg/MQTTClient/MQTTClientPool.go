@@ -1,6 +1,10 @@
 package MQTTClient
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/google/uuid"
+)
 
 type Pool struct {
 	MqttClients []*Client
@@ -12,7 +16,8 @@ func (p *Pool) New(numOfClients *int, clientConfig Config, updates chan int) {
 	// Configure the required number of clients
 	for c := 1; c <= *numOfClients; c++ {
 		mqttClient := Client{
-			ID:             c,
+			ID:             uuid.NewString(),
+			SubTopicId:     c,
 			Config:         clientConfig,
 			Updates:        updates,
 			ConnectionDone: connectionDone,
