@@ -26,6 +26,7 @@ func main() {
 	cert := flag.String("cert", "", "Path to TLS certificate file")
 	ca := flag.String("ca", "", "Path to TLS CA file")
 	key := flag.String("key", "", "Path to TLS key file")
+	insecure := flag.Bool("insecure", false, "Set to true to allow self signed certificates")
 
 	flag.Parse()
 
@@ -46,6 +47,7 @@ func main() {
 		Port:         port,
 		IdAsSubTopic: idAsSubTopic,
 		QoS:          qos,
+		Insecure:     insecure,
 	}
 	// If ca, cert, and key were set configure TLS
 	if TLSOptionsSet() {
@@ -89,15 +91,15 @@ func TLSOptionsSet() bool {
 	foundKey := false
 
 	flag.Visit(func(f *flag.Flag) {
-		if (f.Name == "cert") {
+		if f.Name == "cert" {
 			foundCert = true
 		}
 
-		if (f.Name == "ca") {
+		if f.Name == "ca" {
 			foundCA = true
 		}
 
-		if (f.Name == "key") {
+		if f.Name == "key" {
 			foundKey = true
 		}
 	})

@@ -29,6 +29,7 @@ type Config struct {
 	CA            *string
 	Cert          *string
 	Key           *string
+	Insecure      *bool
 }
 
 type Client struct {
@@ -42,7 +43,6 @@ type Client struct {
 
 func (c *Client) Connect() {
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", *c.Config.Host, *c.Config.Port))
 	opts.SetClientID(fmt.Sprintf("mqtt-load-generator-%s", c.ID))
 	opts.SetUsername(*c.Config.Username)
 	opts.SetPassword(*c.Config.Password)
@@ -50,10 +50,10 @@ func (c *Client) Connect() {
 	// TLS config if configured
 	if c.Config.TLSConfigured {
 		cer, err := tls.LoadX509KeyPair(*c.Config.Cert, *c.Config.Key)
-    if err != nil {
-				fmt.Println("Error reading certificate and/or key")
-        panic(err)
-    }
+		if err != nil {
+			fmt.Println("Error reading certificate and/or key")
+			panic(err)
+		}
 
 		caCertFile, err := ioutil.ReadFile(*c.Config.CA)
 		if err != nil {
@@ -64,10 +64,16 @@ func (c *Client) Connect() {
 		caCertPool := x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM(caCertFile)
 
-
 		opts.SetTLSConfig(&tls.Config{
-			Certificates: []tls.Certificate{cer},
+			Certificates:       []tls.Certificate{cer},
+			ClientCAs:          caCertPool,
+			RootCAs:            caCertPool,
+			InsecureSkipVerify: *c.Config.Insecure,
 		})
+
+		opts.AddBroker(fmt.Sprintf("tls://%s:%d", *c.Config.Host, *c.Config.Port))
+	} else {
+		opts.AddBroker(fmt.Sprintf("tcp://%s:%d", *c.Config.Host, *c.Config.Port))
 	}
 
 	// We use a closure so we can have access to the scope if required
