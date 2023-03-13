@@ -23,6 +23,9 @@ func main() {
 	numberOfClients := flag.Int("n", 1, "Number of concurrent MQTT clients")
 	idAsSubTopic := flag.Bool("suffix", false, "If set to true integers will be used as sub-topic to the topic specified by 't'. The range goes from 1 to N where N is the max number of configured concurrent clients.")
 	qos := flag.Int("q", 1, "MQTT QoS used by all clients")
+	cert := flag.String("cert", "", "Path to TLS certificate file")
+	ca := flag.String("ca", "", "Path to TLS CA file")
+	key := flag.String("key", "", "Path to TLS key file")
 
 	flag.Parse()
 
@@ -43,6 +46,13 @@ func main() {
 		Port:         port,
 		IdAsSubTopic: idAsSubTopic,
 		QoS:          qos,
+	}
+	// If ca, cert, and key were set configure TLS
+	if TLSOptionsSet() {
+		mqttClientConfig.TLSConfigured = true
+		mqttClientConfig.CA = ca
+		mqttClientConfig.Cert = cert
+		mqttClientConfig.Key = key
 	}
 
 	updates := make(chan int)
@@ -71,4 +81,26 @@ func main() {
 	// Hacky way of avoiding the progress bar going away.
 	// Todo: check why this happens
 	bar.Add(0)
+}
+
+func TLSOptionsSet() bool {
+	foundCert := false
+	foundCA := false
+	foundKey := false
+
+	flag.Visit(func(f *flag.Flag) {
+		if (f.Name == "cert") {
+			foundCert = true
+		}
+
+		if (f.Name == "ca") {
+			foundCA = true
+		}
+
+		if (f.Name == "key") {
+			foundKey = true
+		}
+	})
+
+	return foundCA && foundCert && foundKey
 }
