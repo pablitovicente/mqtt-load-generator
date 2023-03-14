@@ -116,8 +116,8 @@ kubectl delete jobs.batch -l app=mqtt-load-generator
 ## TODO
 
 - Use more idiomatic Go style
-- Support TLS
-- Support mTlS
+- ~~Support TLS~~ Added
+- ~~Support mTlS~~ Added
 - Improve error handling
 - Add tests (this should be first :P)
 
