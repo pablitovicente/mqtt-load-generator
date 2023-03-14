@@ -27,6 +27,7 @@ func main() {
 	ca := flag.String("ca", "", "Path to TLS CA file")
 	key := flag.String("key", "", "Path to TLS key file")
 	insecure := flag.Bool("insecure", false, "Set to true to allow self signed certificates")
+	mqtts := flag.Bool("mqtts", false, "Set to true to use MQTTS")
 
 	flag.Parse()
 
@@ -48,6 +49,7 @@ func main() {
 		IdAsSubTopic: idAsSubTopic,
 		QoS:          qos,
 		Insecure:     insecure,
+		MQTTS:        mqtts,
 	}
 	// If ca, cert, and key were set configure TLS
 	if TLSOptionsSet() {

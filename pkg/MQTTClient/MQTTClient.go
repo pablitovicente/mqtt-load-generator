@@ -30,6 +30,7 @@ type Config struct {
 	Cert          *string
 	Key           *string
 	Insecure      *bool
+	MQTTS         *bool
 }
 
 type Client struct {
@@ -73,7 +74,15 @@ func (c *Client) Connect() {
 
 		opts.AddBroker(fmt.Sprintf("tls://%s:%d", *c.Config.Host, *c.Config.Port))
 	} else {
-		opts.AddBroker(fmt.Sprintf("tcp://%s:%d", *c.Config.Host, *c.Config.Port))
+		if *c.Config.MQTTS {
+			opts.SetTLSConfig(&tls.Config{
+				InsecureSkipVerify: *c.Config.Insecure,
+			})
+
+			opts.AddBroker(fmt.Sprintf("tls://%s:%d", *c.Config.Host, *c.Config.Port))
+		} else {
+			opts.AddBroker(fmt.Sprintf("tcp://%s:%d", *c.Config.Host, *c.Config.Port))
+		}
 	}
 
 	// We use a closure so we can have access to the scope if required
