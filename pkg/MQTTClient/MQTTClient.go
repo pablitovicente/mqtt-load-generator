@@ -74,15 +74,16 @@ func (c *Client) Connect() {
 
 		opts.AddBroker(fmt.Sprintf("tls://%s:%d", *c.Config.Host, *c.Config.Port))
 	} else {
+		protocol := "tcp"
 		if *c.Config.MQTTS {
-			opts.SetTLSConfig(&tls.Config{
+			tlsConfig := &tls.Config{
 				InsecureSkipVerify: *c.Config.Insecure,
-			})
-
-			opts.AddBroker(fmt.Sprintf("tls://%s:%d", *c.Config.Host, *c.Config.Port))
-		} else {
-			opts.AddBroker(fmt.Sprintf("tcp://%s:%d", *c.Config.Host, *c.Config.Port))
+			}
+			opts.SetTLSConfig(tlsConfig)
+			protocol = "tls"
 		}
+
+		opts.AddBroker(fmt.Sprintf("%s://%s:%d", protocol, *c.Config.Host, *c.Config.Port))
 	}
 
 	// We use a closure so we can have access to the scope if required
