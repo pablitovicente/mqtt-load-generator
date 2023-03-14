@@ -1,7 +1,10 @@
 package MQTTClient
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"sync"
@@ -11,17 +14,23 @@ import (
 )
 
 type Config struct {
-	MessageCount *int
-	MessageSize  *int
-	Interval     *int
-	TargetTopic  *string
-	Username     *string
-	Password     *string
-	Host         *string
-	Schedule     *string
-	Port         *int
-	IdAsSubTopic *bool
-	QoS          *int
+	MessageCount  *int
+	MessageSize   *int
+	Interval      *int
+	TargetTopic   *string
+	Username      *string
+	Password      *string
+	Host          *string
+	Schedule      *string
+	Port          *int
+	IdAsSubTopic  *bool
+	QoS           *int
+	TLSConfigured bool
+	CA            *string
+	Cert          *string
+	Key           *string
+	Insecure      *bool
+	MQTTS         *bool
 }
 
 type Client struct {
@@ -35,11 +44,48 @@ type Client struct {
 
 func (c *Client) Connect() {
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", *c.Config.Host, *c.Config.Port))
 	opts.SetClientID(fmt.Sprintf("mqtt-load-generator-%s", c.ID))
 	opts.SetUsername(*c.Config.Username)
 	opts.SetPassword(*c.Config.Password)
 	opts.CleanSession = true
+	// TLS config if configured
+	if c.Config.TLSConfigured {
+		cer, err := tls.LoadX509KeyPair(*c.Config.Cert, *c.Config.Key)
+		if err != nil {
+			fmt.Println("Error reading certificate and/or key")
+			panic(err)
+		}
+
+		caCertFile, err := ioutil.ReadFile(*c.Config.CA)
+		if err != nil {
+			fmt.Println("Error reading CA file")
+			panic(err)
+		}
+
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCertFile)
+
+		opts.SetTLSConfig(&tls.Config{
+			Certificates:       []tls.Certificate{cer},
+			ClientCAs:          caCertPool,
+			RootCAs:            caCertPool,
+			InsecureSkipVerify: *c.Config.Insecure,
+		})
+
+		opts.AddBroker(fmt.Sprintf("tls://%s:%d", *c.Config.Host, *c.Config.Port))
+	} else {
+		protocol := "tcp"
+		if *c.Config.MQTTS {
+			tlsConfig := &tls.Config{
+				InsecureSkipVerify: *c.Config.Insecure,
+			}
+			opts.SetTLSConfig(tlsConfig)
+			protocol = "tls"
+		}
+
+		opts.AddBroker(fmt.Sprintf("%s://%s:%d", protocol, *c.Config.Host, *c.Config.Port))
+	}
+
 	// We use a closure so we can have access to the scope if required
 	opts.OnConnect = func(client mqtt.Client) {
 		c.ConnectionDone <- struct{}{}

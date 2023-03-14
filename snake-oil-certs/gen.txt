@@ -1,0 +1,37 @@
+
+From https://devopscube.com/create-self-signed-certificates-openssl/
+
+openssl req -x509 \
+            -sha256 -days 356000 \
+            -nodes \
+            -newkey rsa:2048 \
+            -subj "/CN=localhost/C=DE/L=DE" \
+            -keyout ca-key.pem -out ca-cert.pem
+
+#Server
+
+openssl genrsa -out server-key.pem 2048
+
+openssl req -new -key server-key.pem -out server-req.pem -config csr.conf
+
+openssl x509 -req \
+    -in server-req.pem \
+    -CA ca-cert.pem -CAkey ca-key.pem \
+    -CAcreateserial -out server-cert.pem \
+    -days 36500 \
+    -sha256 -extfile cert.conf
+
+
+#Client
+
+openssl genrsa -out client-key.pem 2048
+
+openssl req -new -key client-key.pem -out client-req.pem -config csr.conf
+
+
+openssl x509 -req \
+    -in client-req.pem \
+    -CA ca-cert.pem -CAkey ca-key.pem \
+    -CAcreateserial -out client-cert.pem \
+    -days 36500 \
+    -sha256 -extfile cert.conf
