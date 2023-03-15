@@ -26,11 +26,9 @@ func (p *Pool) New(numOfClients *int, clientConfig Config, updates chan int) {
 		mqttClient.Connect()
 		// We wait until all clients connect
 		<-connectionDone
-		// Then we close the channel to be a good person
 		p.MqttClients = append(p.MqttClients, &mqttClient)
 	}
 
-	close(connectionDone)
 	close(p.SetupDone)
 }
 
