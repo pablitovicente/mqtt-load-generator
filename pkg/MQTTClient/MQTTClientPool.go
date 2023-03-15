@@ -11,7 +11,7 @@ type Pool struct {
 	SetupDone   chan struct{}
 }
 
-func (p *Pool) New(numOfClients *int, clientConfig Config, updates chan int) {
+func (p *Pool) New(numOfClients *int, clientConfig Config, updates chan int, connectionProgress chan int) {
 	connectionDone := make(chan struct{})
 	// Configure the required number of clients
 	for c := 1; c <= *numOfClients; c++ {
@@ -27,8 +27,8 @@ func (p *Pool) New(numOfClients *int, clientConfig Config, updates chan int) {
 		// We wait until all clients connect
 		<-connectionDone
 		p.MqttClients = append(p.MqttClients, &mqttClient)
+		connectionProgress <- 1
 	}
-
 	close(p.SetupDone)
 }
 

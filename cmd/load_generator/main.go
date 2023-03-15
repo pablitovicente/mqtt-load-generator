@@ -60,21 +60,36 @@ func main() {
 	}
 
 	updates := make(chan int)
+	connectionProgress := make(chan int)
 
 	pool := MQTTClient.Pool{
 		SetupDone:   make(chan struct{}),
 		MqttClients: make([]*MQTTClient.Client, 0),
 	}
-	fmt.Printf("Setting up %d MQTT clients\n", *numberOfClients)
-	pool.New(numberOfClients, mqttClientConfig, updates)
+
+	// Provide feedback about connection progress
+	connectionBar := progressbar.Default(int64(*numberOfClients))
+	connectionBar.Describe(fmt.Sprintf("Connecting %d MQTT clients", *numberOfClients))
+	go func(progress chan int) {
+		for range progress {
+			connectionBar.Add(1)
+			// Stop connection progress
+			if connectionBar.IsFinished() {
+				connectionBar.Exit()
+				connectionBar.Close()
+			}
+		}
+	}(connectionProgress)
+
+	pool.New(numberOfClients, mqttClientConfig, updates, connectionProgress)
 	// Wait until all the setup is done
 	<-pool.SetupDone
-	fmt.Println("All clients connected, starting publishing messages")
+
 	var wg sync.WaitGroup
 	pool.Start(&wg)
 
 	bar := progressbar.Default(int64(*messageCount) * int64(*numberOfClients))
-
+	bar.Describe(fmt.Sprintf("Publishing %d messages", int64(*messageCount) * int64(*numberOfClients)))
 	go func(updates chan int) {
 		for update := range updates {
 			bar.Add(update)
@@ -82,9 +97,7 @@ func main() {
 	}(updates)
 
 	wg.Wait()
-	// Hacky way of avoiding the progress bar going away.
-	// Todo: check why this happens
-	bar.Add(0)
+	bar.Close()
 }
 
 func TLSOptionsSet() bool {
