@@ -70,22 +70,7 @@ func main() {
 	}
 
 	// Provide feedback about connection progress
-	connectionBar := progressbar.NewOptions64(
-		int64(*numberOfClients),
-		progressbar.OptionSetDescription(fmt.Sprintf("Connecting %d MQTT clients", *numberOfClients)),
-		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionSetWidth(10),
-		progressbar.OptionThrottle(65*time.Millisecond),
-		progressbar.OptionShowCount(),
-		progressbar.OptionShowIts(),
-		progressbar.OptionOnCompletion(func() {
-			fmt.Fprint(os.Stderr, "\n")
-		}),
-		progressbar.OptionSpinnerType(14),
-		progressbar.OptionFullWidth(),
-		progressbar.OptionSetRenderBlankState(true),
-		progressbar.OptionShowElapsedTimeOnFinish(),
-	)
+	connectionBar := createConnectionsBar(int64(*numberOfClients))
 
 	go func(progress chan int) {
 		for range progress {
@@ -105,22 +90,7 @@ func main() {
 	var wg sync.WaitGroup
 	pool.Start(&wg)
 
-	bar := progressbar.NewOptions64(
-		int64(*messageCount)*int64(*numberOfClients),
-		progressbar.OptionSetDescription(fmt.Sprintf("Publishing %d messages", int64(*messageCount)*int64(*numberOfClients))),
-		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionSetWidth(10),
-		progressbar.OptionThrottle(65*time.Millisecond),
-		progressbar.OptionShowCount(),
-		progressbar.OptionShowIts(),
-		progressbar.OptionOnCompletion(func() {
-			fmt.Fprint(os.Stderr, "\n")
-		}),
-		progressbar.OptionSpinnerType(14),
-		progressbar.OptionFullWidth(),
-		progressbar.OptionSetRenderBlankState(true),
-		progressbar.OptionShowElapsedTimeOnFinish(),
-	)
+	bar := createMessageProgressBar(int64(*numberOfClients), int64(*messageCount))
 	go func(updates chan int) {
 		for update := range updates {
 			bar.Add(update)
@@ -151,4 +121,42 @@ func TLSOptionsSet() bool {
 	})
 
 	return foundCA && foundCert && foundKey
+}
+
+func createConnectionsBar(numberOfClients int64) *progressbar.ProgressBar {
+	return progressbar.NewOptions64(
+		int64(numberOfClients),
+		progressbar.OptionSetDescription(fmt.Sprintf("Connecting %d MQTT clients", numberOfClients)),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionSetWidth(10),
+		progressbar.OptionThrottle(65*time.Millisecond),
+		progressbar.OptionShowCount(),
+		progressbar.OptionShowIts(),
+		progressbar.OptionOnCompletion(func() {
+			fmt.Fprint(os.Stderr, "\n")
+		}),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetRenderBlankState(true),
+		progressbar.OptionShowElapsedTimeOnFinish(),
+	)
+}
+
+func createMessageProgressBar(numberOfClients int64, messageCount int64) *progressbar.ProgressBar {
+	return progressbar.NewOptions64(
+		numberOfClients*messageCount,
+		progressbar.OptionSetDescription(fmt.Sprintf("Publishing %d messages", numberOfClients*messageCount)),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionSetWidth(10),
+		progressbar.OptionThrottle(65*time.Millisecond),
+		progressbar.OptionShowCount(),
+		progressbar.OptionShowIts(),
+		progressbar.OptionOnCompletion(func() {
+			fmt.Fprint(os.Stderr, "\n")
+		}),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetRenderBlankState(true),
+		progressbar.OptionShowElapsedTimeOnFinish(),
+	)
 }
