@@ -3,7 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"sync"
+	"time"
 
 	MQTTClient "github.com/pablitovicente/mqtt-load-generator/pkg/MQTTClient"
 	"github.com/schollz/progressbar/v3"
@@ -68,8 +70,23 @@ func main() {
 	}
 
 	// Provide feedback about connection progress
-	connectionBar := progressbar.Default(int64(*numberOfClients))
-	connectionBar.Describe(fmt.Sprintf("Connecting %d MQTT clients", *numberOfClients))
+	connectionBar := progressbar.NewOptions64(
+		int64(*numberOfClients),
+		progressbar.OptionSetDescription(fmt.Sprintf("Connecting %d MQTT clients", *numberOfClients)),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionSetWidth(10),
+		progressbar.OptionThrottle(65*time.Millisecond),
+		progressbar.OptionShowCount(),
+		progressbar.OptionShowIts(),
+		progressbar.OptionOnCompletion(func() {
+			fmt.Fprint(os.Stderr, "\n")
+		}),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetRenderBlankState(true),
+		progressbar.OptionShowElapsedTimeOnFinish(),
+	)
+
 	go func(progress chan int) {
 		for range progress {
 			connectionBar.Add(1)
@@ -88,8 +105,22 @@ func main() {
 	var wg sync.WaitGroup
 	pool.Start(&wg)
 
-	bar := progressbar.Default(int64(*messageCount) * int64(*numberOfClients))
-	bar.Describe(fmt.Sprintf("Publishing %d messages", int64(*messageCount) * int64(*numberOfClients)))
+	bar := progressbar.NewOptions64(
+		int64(*messageCount)*int64(*numberOfClients),
+		progressbar.OptionSetDescription(fmt.Sprintf("Publishing %d messages", int64(*messageCount)*int64(*numberOfClients))),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionSetWidth(10),
+		progressbar.OptionThrottle(65*time.Millisecond),
+		progressbar.OptionShowCount(),
+		progressbar.OptionShowIts(),
+		progressbar.OptionOnCompletion(func() {
+			fmt.Fprint(os.Stderr, "\n")
+		}),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetRenderBlankState(true),
+		progressbar.OptionShowElapsedTimeOnFinish(),
+	)
 	go func(updates chan int) {
 		for update := range updates {
 			bar.Add(update)
