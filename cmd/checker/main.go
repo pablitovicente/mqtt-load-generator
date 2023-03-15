@@ -23,6 +23,11 @@ func main() {
 	qos := flag.Int("q", 1, "MQTT QoS used by all clients")
 	disableBar := flag.Bool("disable-bar", false, "Disable interactive mode to display statistics as log messages instead of interactive output")
 	resetTime := flag.Float64("reset-after", 30, "Reset counter after <n> seconds without a message")
+	cert := flag.String("cert", "", "Path to TLS certificate file")
+	ca := flag.String("ca", "", "Path to TLS CA file")
+	key := flag.String("key", "", "Path to TLS key file")
+	insecure := flag.Bool("insecure", false, "Set to true to allow self signed certificates")
+	mqtts := flag.Bool("mqtts", false, "Set to true to use MQTTS")
 
 	flag.Parse()
 
@@ -42,6 +47,16 @@ func main() {
 		Host:        host,
 		Port:        port,
 		QoS:         qos,
+		Insecure:    insecure,
+		MQTTS:       mqtts,
+	}
+
+	// If ca, cert, and key were set configure TLS
+	if TLSOptionsSet() {
+		mqttClientConfig.TLSConfigured = true
+		mqttClientConfig.CA = ca
+		mqttClientConfig.Cert = cert
+		mqttClientConfig.Key = key
 	}
 
 	rand.Seed(time.Now().UnixNano())
@@ -112,4 +127,26 @@ func main() {
 		}
 	}
 	select {}
+}
+
+func TLSOptionsSet() bool {
+	foundCert := false
+	foundCA := false
+	foundKey := false
+
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "cert" {
+			foundCert = true
+		}
+
+		if f.Name == "ca" {
+			foundCA = true
+		}
+
+		if f.Name == "key" {
+			foundKey = true
+		}
+	})
+
+	return foundCA && foundCert && foundKey
 }
