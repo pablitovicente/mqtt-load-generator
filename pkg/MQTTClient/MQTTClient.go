@@ -48,6 +48,7 @@ func (c *Client) Connect() {
 	opts.SetUsername(*c.Config.Username)
 	opts.SetPassword(*c.Config.Password)
 	opts.CleanSession = true
+	opts.SetOrderMatters(false)
 	// TLS config if configured
 	if c.Config.TLSConfigured {
 		cer, err := tls.LoadX509KeyPair(*c.Config.Cert, *c.Config.Key)
