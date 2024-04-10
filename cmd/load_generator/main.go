@@ -32,6 +32,7 @@ func main() {
 	mqtts := flag.Bool("mqtts", false, "Set to true to use MQTTS")
 	cleanSession := flag.Bool("cleanSession", true, "Set to true for clean MQTT sessions or false to keep session")
 	clientID := flag.String("clientID", "", "Custom MQTT clientID")
+	keepAliveTimeout := flag.Int64("keepAliveTimeout", 5000, "Set the amount of time (in seconds) that the client should wait before sending a PING request to the broker")
 
 	flag.Parse()
 
@@ -41,21 +42,22 @@ func main() {
 
 	// General Client Config
 	mqttClientConfig := MQTTClient.Config{
-		MessageCount: messageCount,
-		MessageSize:  messageSize,
-		Interval:     interval,
-		Schedule:     schedule,
-		TargetTopic:  targetTopic,
-		Username:     username,
-		Password:     password,
-		Host:         host,
-		Port:         port,
-		IdAsSubTopic: idAsSubTopic,
-		QoS:          qos,
-		Insecure:     insecure,
-		MQTTS:        mqtts,
-		CleanSession: cleanSession,
-		ClientID:     clientID,
+		MessageCount:     messageCount,
+		MessageSize:      messageSize,
+		Interval:         interval,
+		Schedule:         schedule,
+		TargetTopic:      targetTopic,
+		Username:         username,
+		Password:         password,
+		Host:             host,
+		Port:             port,
+		IdAsSubTopic:     idAsSubTopic,
+		QoS:              qos,
+		Insecure:         insecure,
+		MQTTS:            mqtts,
+		CleanSession:     cleanSession,
+		ClientID:         clientID,
+		KeepAliveTimeout: keepAliveTimeout,
 	}
 	// If ca, cert, and key were set configure TLS
 	if TLSOptionsSet() {

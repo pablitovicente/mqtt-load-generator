@@ -14,25 +14,26 @@ import (
 )
 
 type Config struct {
-	MessageCount  *int
-	MessageSize   *int
-	Interval      *int
-	TargetTopic   *string
-	Username      *string
-	Password      *string
-	Host          *string
-	Schedule      *string
-	Port          *int
-	IdAsSubTopic  *bool
-	QoS           *int
-	TLSConfigured bool
-	CA            *string
-	Cert          *string
-	Key           *string
-	Insecure      *bool
-	MQTTS         *bool
-	CleanSession  *bool
-	ClientID      *string
+	MessageCount     *int
+	MessageSize      *int
+	Interval         *int
+	TargetTopic      *string
+	Username         *string
+	Password         *string
+	Host             *string
+	Schedule         *string
+	Port             *int
+	IdAsSubTopic     *bool
+	QoS              *int
+	TLSConfigured    bool
+	CA               *string
+	Cert             *string
+	Key              *string
+	Insecure         *bool
+	MQTTS            *bool
+	CleanSession     *bool
+	ClientID         *string
+	KeepAliveTimeout *int64
 }
 
 type Client struct {
@@ -57,6 +58,7 @@ func (c *Client) Connect() {
 	opts.SetPassword(*c.Config.Password)
 	opts.CleanSession = *c.Config.CleanSession
 	opts.SetOrderMatters(false)
+	opts.SetKeepAlive(time.Duration(*c.Config.KeepAliveTimeout) * time.Second)
 	// TLS config if configured
 	if c.Config.TLSConfigured {
 		cer, err := tls.LoadX509KeyPair(*c.Config.Cert, *c.Config.Key)
