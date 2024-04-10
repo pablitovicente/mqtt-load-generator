@@ -31,6 +31,8 @@ type Config struct {
 	Key           *string
 	Insecure      *bool
 	MQTTS         *bool
+	CleanSession  *bool
+	ClientID      *string
 }
 
 type Client struct {
@@ -44,10 +46,16 @@ type Client struct {
 
 func (c *Client) Connect() {
 	opts := mqtt.NewClientOptions()
-	opts.SetClientID(fmt.Sprintf("mqtt-load-generator-%s", c.ID))
+
+	if *c.Config.ClientID != "" {
+		opts.SetClientID(*c.Config.ClientID)
+	} else {
+		opts.SetClientID(fmt.Sprintf("mqtt-load-generator-%s", c.ID))
+	}
+
 	opts.SetUsername(*c.Config.Username)
 	opts.SetPassword(*c.Config.Password)
-	opts.CleanSession = true
+	opts.CleanSession = *c.Config.CleanSession
 	opts.SetOrderMatters(false)
 	// TLS config if configured
 	if c.Config.TLSConfigured {

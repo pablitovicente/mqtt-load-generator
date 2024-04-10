@@ -30,6 +30,8 @@ func main() {
 	key := flag.String("key", "", "Path to TLS key file")
 	insecure := flag.Bool("insecure", false, "Set to true to allow self signed certificates")
 	mqtts := flag.Bool("mqtts", false, "Set to true to use MQTTS")
+	cleanSession := flag.Bool("cleanSession", true, "Set to true for clean MQTT sessions or false to keep session")
+	clientID := flag.String("clientID", "", "Custom MQTT clientID")
 
 	flag.Parse()
 
@@ -52,6 +54,8 @@ func main() {
 		QoS:          qos,
 		Insecure:     insecure,
 		MQTTS:        mqtts,
+		CleanSession: cleanSession,
+		ClientID:     clientID,
 	}
 	// If ca, cert, and key were set configure TLS
 	if TLSOptionsSet() {
