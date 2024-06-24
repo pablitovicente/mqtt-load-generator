@@ -67,15 +67,16 @@ Here are a few methods of running the image in a Kubernetes cluster
 ### Running the load generator
 
 ```bash
-kubectl run mqtt-load-generator --image=jforge/mqtt-load-generator  \
+kubectl run mqtt-load-generator --image=ghcr.io/pablitovicente/mqtt-load-generator:v1.0.7  \
   -- -h <mqtt-broker-address> -p 1883 -u secret -P mega_secret \
      -c 1000 -s 1000 -t /golang/pub -i 1 -n 100
 ```
 
+
 ### Running the load checker
 
 ```bash
-kubectl run mqtt-load-checker --image=pgschk/mqtt-load-generator --command \
+kubectl run mqtt-load-checker --image=ghcr.io/pablitovicente/mqtt-load-generator:v1.0.7 --command \
   -- /checker -h <mqtt-broker-address> -p 1883 -u secret -P mega_secret \
       -t /golang/pub --disable-bar
 ```

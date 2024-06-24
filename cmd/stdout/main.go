@@ -19,7 +19,7 @@ func main() {
 	password := flag.String("P", "", "MQTT password")
 	host := flag.String("h", "localhost", "MQTT host")
 	port := flag.Int("p", 1883, "MQTT port")
-	qos := flag.Int("q", 1, "MQTT QoS used by all clients")
+	qos := flag.Int("q", 1, "MQTT QoS level used by all clients")
 
 	flag.Parse()
 
