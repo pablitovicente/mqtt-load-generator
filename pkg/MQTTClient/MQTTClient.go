@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +35,7 @@ type Config struct {
 	CleanSession     *bool
 	ClientID         *string
 	KeepAliveTimeout *int64
+	Benchmark        *bool
 }
 
 type Client struct {
@@ -123,8 +125,6 @@ func (c *Client) Connect() {
 
 func (c Client) Start(wg *sync.WaitGroup) {
 	defer wg.Done()
-	payload := make([]byte, *c.Config.MessageSize)
-	rand.Read(payload)
 
 	var topic string
 	if *c.Config.IdAsSubTopic {
@@ -133,8 +133,26 @@ func (c Client) Start(wg *sync.WaitGroup) {
 		topic = *c.Config.TargetTopic
 	}
 
+	var getPayload func() interface{}
+	if *c.Config.Benchmark {
+		paddingSize := *c.Config.MessageSize - 50
+		if paddingSize < 0 {
+			paddingSize = 0
+		}
+		padding := strings.Repeat("x", paddingSize)
+		getPayload = func() interface{} {
+			return fmt.Sprintf(`{"timestamp":%d,"padding":"%s"}`, time.Now().UnixMilli(), padding)
+		}
+	} else {
+		staticPayload := make([]byte, *c.Config.MessageSize)
+		rand.Read(staticPayload)
+		getPayload = func() interface{} {
+			return staticPayload
+		}
+	}
+
 	for i := 0; i < *c.Config.MessageCount; i++ {
-		token := c.Connection.Publish(topic, byte(*c.Config.QoS), false, payload)
+		token := c.Connection.Publish(topic, byte(*c.Config.QoS), false, getPayload())
 		token.Wait()
 
 		// If the interval is zero skip this logic

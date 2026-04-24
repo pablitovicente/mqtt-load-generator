@@ -33,6 +33,7 @@ func main() {
 	cleanSession := flag.Bool("cleanSession", true, "Set to true for clean MQTT sessions or false to keep session")
 	clientID := flag.String("clientID", "", "Custom MQTT clientID")
 	keepAliveTimeout := flag.Int64("keepAliveTimeout", 5, "Set the amount of time (in seconds) the client should wait for, before sending a PING request to the broker")
+	benchmark := flag.Bool("benchmark", false, "If set to true, payload is JSON with a dynamic timestamp and padding (for latency benchmarking)")
 
 	flag.Parse()
 
@@ -58,6 +59,7 @@ func main() {
 		CleanSession:     cleanSession,
 		ClientID:         clientID,
 		KeepAliveTimeout: keepAliveTimeout,
+		Benchmark:        benchmark,
 	}
 	// If ca, cert, and key were set configure TLS
 	if TLSOptionsSet() {
