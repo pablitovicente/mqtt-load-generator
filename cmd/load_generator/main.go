@@ -69,7 +69,8 @@ func main() {
 		mqttClientConfig.Key = key
 	}
 
-	updates := make(chan int)
+	// Buffered so publishers don't block on the progress bar consumer
+	updates := make(chan int, 10000)
 	connectionProgress := make(chan int)
 
 	pool := MQTTClient.Pool{
