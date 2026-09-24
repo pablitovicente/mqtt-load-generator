@@ -49,7 +49,7 @@ func newRootCommand(connect connectFunc) *cobra.Command {
 
 	rootCommand.AddCommand(newPublishCommand(connection, publish))
 	rootCommand.AddCommand(newSubscribeCommand(connection, connect))
-	rootCommand.AddCommand(newDumpCommand(connection))
+	rootCommand.AddCommand(newDumpCommand(connection, connect))
 
 	return rootCommand
 }

@@ -102,9 +102,10 @@ func TestFlagMapping(t *testing.T) {
 	}
 }
 
-// TestDefaults checks the default configuration printed by root (bare command), pub and dump,
-// and confirms the bare command behaves the same as pub. sub no longer prints its config (it
-// runs for real); its defaults are covered by TestSubscribeConnectsWithParsedOptions instead.
+// TestDefaults checks the default configuration printed by root (bare command) and pub, and
+// confirms the bare command behaves the same as pub. sub and dump no longer print their config
+// (they run for real); their defaults are covered by TestSubscribeConnectsWithParsedOptions and
+// TestDumpConnectsWithParsedOptions instead.
 func TestDefaults(t *testing.T) {
 	wantConnection := Connection{
 		Host:             "localhost",
@@ -151,17 +152,6 @@ func TestDefaults(t *testing.T) {
 				t.Errorf("publish = %+v, want %+v", config.Publish, wantPublish)
 			}
 		}},
-		{"dump", []string{"dump"}, func(t *testing.T, config printedConfig) {
-			if config.Connection != wantConnection {
-				t.Errorf("connection = %+v, want %+v", config.Connection, wantConnection)
-			}
-			if config.Publish != nil {
-				t.Errorf("expected no publish config, got %+v", config.Publish)
-			}
-			if config.Subscribe != nil {
-				t.Errorf("expected no subscribe config, got %+v", config.Subscribe)
-			}
-		}},
 	}
 
 	for _, tt := range tests {
@@ -177,13 +167,13 @@ func TestDefaults(t *testing.T) {
 }
 
 // TestHostShortFlagEverywhere checks that -h sets host, not help, on every command that still
-// prints its config. sub's -h handling is covered separately by TestSubscribeConnectsWithParsedOptions,
-// since sub no longer prints its config.
+// prints its config. sub's and dump's -h handling are covered separately, by
+// TestSubscribeConnectsWithParsedOptions and TestDumpConnectsWithParsedOptions, since neither
+// prints its config any more.
 func TestHostShortFlagEverywhere(t *testing.T) {
 	tests := [][]string{
 		{"-h", "broker"},
 		{"pub", "-h", "broker"},
-		{"dump", "-h", "broker"},
 	}
 
 	for _, args := range tests {
@@ -549,6 +539,65 @@ func TestSubscribeReturnsErrorWhenConnectFails(t *testing.T) {
 	connector := &fakeConnector{err: errors.New("connection refused")}
 
 	_, err := runCommandWithConnector(t, context.Background(), connector, "sub")
+	if err == nil {
+		t.Fatal("expected an error, got none")
+	}
+}
+
+// TestDumpConnectsWithParsedOptions checks that dump converts its parsed connection flags into
+// broker.Options and connects with them, using the default generated client ID. dump no longer
+// prints its config (see TestDefaults for pub).
+func TestDumpConnectsWithParsedOptions(t *testing.T) {
+	connector := &fakeConnector{}
+
+	output, err := runCommandWithConnector(t, alreadyCancelledContext(), connector,
+		"dump", "-h", "broker", "-p", "1884", "-t", "load/custom", "-q", "2")
+	if err != nil {
+		t.Fatalf("expected no error, got %v\noutput: %s", err, output)
+	}
+
+	calls := connector.recordedCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected exactly 1 connect call, got %d", len(calls))
+	}
+
+	want := broker.Options{
+		Host:             "broker",
+		Port:             1884,
+		CleanSession:     true,
+		KeepAliveSeconds: 5,
+	}
+	if calls[0].options != want {
+		t.Errorf("connect options = %+v, want %+v", calls[0].options, want)
+	}
+
+	if !strings.HasPrefix(calls[0].clientID, "mqtt-load-generator-") {
+		t.Errorf("expected a generated client ID, got %q", calls[0].clientID)
+	}
+}
+
+// TestDumpUsesCustomClientID checks that --clientID is passed straight through instead of a
+// generated one.
+func TestDumpUsesCustomClientID(t *testing.T) {
+	connector := &fakeConnector{}
+
+	_, err := runCommandWithConnector(t, alreadyCancelledContext(), connector, "dump", "--clientID", "my-client")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	calls := connector.recordedCalls()
+	if len(calls) != 1 || calls[0].clientID != "my-client" {
+		t.Fatalf("expected a single call with client ID %q, got %+v", "my-client", calls)
+	}
+}
+
+// TestDumpReturnsErrorWhenConnectFails checks that a failed connection is returned as an error
+// instead of panicking or exiting the process.
+func TestDumpReturnsErrorWhenConnectFails(t *testing.T) {
+	connector := &fakeConnector{err: errors.New("connection refused")}
+
+	_, err := runCommandWithConnector(t, context.Background(), connector, "dump")
 	if err == nil {
 		t.Fatal("expected an error, got none")
 	}

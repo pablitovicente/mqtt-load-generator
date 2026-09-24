@@ -1,5 +1,6 @@
 // Package mqttload holds the run loops used by the CLI commands: sub counts received
-// messages, dump prints them, pub sends them. Iteration 1 only implements sub.
+// messages, dump prints them, pub sends them. Iteration 2 implements sub and dump; pub is
+// still to come.
 package mqttload
 
 import (
@@ -28,9 +29,13 @@ type SubscribeOptions struct {
 	ResetAfter time.Duration
 }
 
-// subscribeTimeout is how long RunSubscribe waits for the broker to acknowledge the subscribe
-// request before giving up.
+// subscribeTimeout is how long RunSubscribe and RunDump wait for the broker to acknowledge the
+// subscribe request before giving up.
 const subscribeTimeout = 10 * time.Second
+
+// maxWaitForQueuedSends is how long Disconnect is given to flush anything still queued, shared
+// by RunSubscribe and RunDump.
+const maxWaitForQueuedSends = 250 * time.Millisecond
 
 // Real-world reporting intervals, used by RunSubscribe. Tests call runSubscribe directly with much
 // shorter intervals so they don't have to wait on real 100ms/1s ticks.
@@ -98,15 +103,10 @@ func runSubscribe(
 ) error {
 	var counter messageCounter
 
-	token := client.Subscribe(topic, qos, func(_ string, _ []byte) {
+	if err := subscribeAndWait(client, topic, qos, func(_ string, _ []byte) {
 		counter.recordMessage()
-	})
-
-	if !token.WaitTimeout(subscribeTimeout) {
-		return fmt.Errorf("subscribing to %q: timed out waiting for the broker to acknowledge", topic)
-	}
-	if err := token.Error(); err != nil {
-		return fmt.Errorf("subscribing to %q: %w", topic, err)
+	}); err != nil {
+		return err
 	}
 
 	logger.Info("subscribed", "topic", topic, "qos", qos)
@@ -118,9 +118,25 @@ func runSubscribe(
 		runProgressBar(ctx, output, &counter, barInterval)
 	}
 
-	client.Disconnect(250 * time.Millisecond)
+	client.Disconnect(maxWaitForQueuedSends)
 
 	logger.Info("sub stopped", "totalReceived", counter.received.Load())
+
+	return nil
+}
+
+// subscribeAndWait subscribes to topic at qos with callback, and waits for the broker to
+// acknowledge the subscribe request. RunSubscribe and RunDump both need exactly this, so it's
+// pulled out here instead of copied.
+func subscribeAndWait(client Subscriber, topic string, qos byte, callback func(topic string, payload []byte)) error {
+	token := client.Subscribe(topic, qos, callback)
+
+	if !token.WaitTimeout(subscribeTimeout) {
+		return fmt.Errorf("subscribing to %q: timed out waiting for the broker to acknowledge", topic)
+	}
+	if err := token.Error(); err != nil {
+		return fmt.Errorf("subscribing to %q: %w", topic, err)
+	}
 
 	return nil
 }
