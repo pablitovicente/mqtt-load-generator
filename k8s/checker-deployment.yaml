@@ -20,16 +20,21 @@ spec:
       - name: mqtt-checker
         image: pgschk/mqtt-load-generator:latest
         command:
-        - /checker
+        - /mqtt-load-generator
+        env:
+        - name: MQTT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mqtt-load-generator
+              key: password
         args:
+        - sub
         - -h
         -  mqtt # hostname of mqtt server
         - -p
         - "1883" # port of mqtt server
         - -u
         - secret # username
-        - -P
-        -  mega_secret # password
         - -t
         - /golang/pub # target topic to subscribe to
         - --disable-bar # disable interactive bar

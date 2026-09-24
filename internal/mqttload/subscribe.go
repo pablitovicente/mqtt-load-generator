@@ -113,7 +113,7 @@ func runSubscribe(
 	if options.DisableBar {
 		runDisableBarReporting(ctx, logger, &counter, options.ResetAfter, logInterval)
 	} else {
-		fmt.Fprintln(output, "press ctrl+c to exit")
+		_, _ = fmt.Fprintln(output, "press ctrl+c to exit")
 		runProgressBar(ctx, output, &counter, barInterval)
 	}
 

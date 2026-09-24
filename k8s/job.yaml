@@ -17,6 +17,12 @@ spec:
       containers:
       - name: mqtt-load-generator
         image: pgschk/mqtt-load-generator:latest
+        env:
+        - name: MQTT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mqtt-load-generator
+              key: password
         args:
         - -h
         - mqtt # hostname of mqtt server
@@ -24,8 +30,6 @@ spec:
         - "1883" # port of mqtt server
         - -u
         - secret # username
-        - -P
-        -  mega_secret # password
         - -c
         - "1000" # number of messages per client
         - -s

@@ -44,7 +44,7 @@ func TestRunClientPublish_NeverMoreThanInFlightOutstanding(t *testing.T) {
 	client := &fakePublisher{}
 
 	var mutex sync.Mutex
-	var tokens []*pendingToken
+	tokens := make([]*pendingToken, 0, count)
 
 	client.nextToken = func(_ fakePublishCall) broker.Token {
 		token := newPendingToken()

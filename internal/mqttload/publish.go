@@ -210,7 +210,7 @@ func runPublishProgressBar(done <-chan struct{}, output io.Writer, counters []*p
 		progressbar.OptionThrottle(65*time.Millisecond),
 		progressbar.OptionShowCount(),
 		progressbar.OptionShowIts(),
-		progressbar.OptionOnCompletion(func() { fmt.Fprint(output, "\n") }),
+		progressbar.OptionOnCompletion(func() { _, _ = fmt.Fprint(output, "\n") }),
 		progressbar.OptionSpinnerType(14),
 		progressbar.OptionFullWidth(),
 		progressbar.OptionSetRenderBlankState(true),
