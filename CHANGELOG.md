@@ -21,7 +21,9 @@ and `dump`. The code was rewritten and now has tests. 1.x releases remain availa
   default on `sub`, on by default on `dump`.
 - `--show-topic` on `dump`: print `topic<TAB>payload`.
 - Environment variables for credentials and TLS files: `MQTT_USERNAME`, `MQTT_PASSWORD`,
-  `MQTT_CA`, `MQTT_CERT`, `MQTT_KEY`. A flag given on the command line is used instead.
+  `MQTT_CA`, `MQTT_CERT`, `MQTT_KEY`. The 1.x flags `-u` and `-P` still work, and take
+  priority over the environment variables when both are given. The TLS file flags need two
+  dashes now: `--ca`, `--cert`, `--key`.
 
 ### Bugs fixed
 
@@ -46,7 +48,11 @@ and `dump`. The code was rewritten and now has tests. 1.x releases remain availa
 - `stdout` is now `dump`. It prints payloads as text instead of byte numbers
   (`[123 34 ...]`).
 - Long flags need two dashes: `--suffix`, `--insecure`, `--mqtts`, `--cleanSession` and so on.
-  With one dash, a multi-letter flag is read as several single-letter flags.
+  With one dash, the letters after the dash are read as short flags, and a 1.x command line
+  stops with an error such as `unknown shorthand flag: 'm' in -mqtts` or
+  `invalid argument "uffix" for "-s, --size" flag`. Short flags that take text (`-h`, `-t`,
+  `-u`, `-P`, `-z`) take the rest of the word as their value: `-hostname` means host
+  `ostname`.
 - `-h` means `--host`. Help is `--help` only.
 - These are now errors: a typo in `-z`, QoS outside 0 to 2, only one or two of the TLS file
   flags, and `--clientID` with `--clients` above 1.

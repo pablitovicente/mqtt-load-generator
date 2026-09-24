@@ -8,7 +8,7 @@ subcommands:
 - `sub` subscribes to a topic and counts received messages, shown as a progress bar or as log
   lines (`--disable-bar`).
 - `dump` subscribes to a topic and prints each received payload as text, one per line, on
-  stdout.
+  stdout, optionally preceded by the topic it arrived on (`--show-topic`).
 
 ## Requirements
 
@@ -38,18 +38,18 @@ make build GOARCH=arm GOARM=7
 | Target | Does |
 |---|---|
 | `make test` | Runs the tests with the race detector |
-| `make lint` | Runs golangci-lint if it is installed, otherwise `go vet` |
+| `make lint` | Runs golangci-lint |
 | `make nilaway` | Checks for possible nil pointer panics with nilaway |
 | `make check` | Runs `lint`, `nilaway` and `test` |
 | `make docker` | Builds the Docker image |
 
-`make nilaway` downloads and builds nilaway on first use, so it needs no install.
-
-`make lint` needs golangci-lint v2 built with Go 1.27 or newer. A copy built with an older
-Go refuses to check this module. Install it with:
+`make lint` and `make nilaway` need golangci-lint v2 and nilaway installed, built with Go 1.27
+or newer. A copy built with an older Go refuses to check this module. When a tool is missing,
+the target stops and prints the install command. Install both with:
 
 ```bash
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+go install go.uber.org/nilaway/cmd/nilaway@latest
 ```
 
 The golangci-lint site (golangci-lint.run) lists other ways to install it.
@@ -108,7 +108,9 @@ topics can contain spaces.
 ## Credentials and TLS
 
 Username, password and the three TLS file paths can be given as flags or as environment
-variables. A flag given on the command line is used instead of the environment variable.
+variables. The 1.x flags `-u` and `-P` still work, and take priority over the environment
+variables when both are given. The TLS file flags need two dashes now: `--ca`, `--cert`,
+`--key`.
 
 | Flag | Environment variable |
 |---|---|
@@ -142,10 +144,17 @@ them is an error.
 
 `--inflight` is how many publishes one client can have sent but not yet acknowledged. With
 the default, 1, each client waits for the acknowledgement of a message before sending the
-next one. This is how 1.x worked. Higher values let a client keep sending while earlier
-messages are still waiting for their acknowledgement. The maximum is 65535, because MQTT
-message IDs are 16 bits. At QoS 0 there are no acknowledgements, so `--inflight` has no
-effect there.
+next one. This is how 1.x worked.
+
+When a client reaches the limit, it waits for one of its outstanding publishes to be
+acknowledged, fail or time out before sending the next one. Each client sends at most
+`--inflight` messages per round trip to the broker: with a 10 ms round trip, `--inflight 1`
+allows about 100 messages per second per client, and `--inflight 50` about 5,000. Raising it
+matters most when the broker is far away or slow to acknowledge.
+
+The limit exists because unacknowledged messages are kept in memory until the broker
+acknowledges them. The maximum is 65535, because MQTT message IDs are 16 bits. At QoS 0 there
+are no acknowledgements, so `--inflight` has no effect there.
 
 `--ack-timeout` (default 30s) is how long to wait for an acknowledgement before counting the
 publish as timed out. With a high `--inflight` on a busy broker, acknowledgements take longer;
