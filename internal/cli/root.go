@@ -54,6 +54,13 @@ func newRootCommand(connect connectFunc) *cobra.Command {
 	return rootCommand
 }
 
+// orderedHelp is the help text for --ordered on sub and dump. It spells out the trade-off so
+// users can choose: ordered keeps the order but is slower.
+const orderedHelp = "Handle received messages one at a time, in the order they arrive. " +
+	"Slower: each message waits until the one before it has been handled, so under heavy " +
+	"load the tool can fall behind the broker. When off, messages are handled in parallel: " +
+	"faster, but the order can change"
+
 // registerConnectionFlags adds every connection flag to a flag set. It is called once, on
 // the root command's persistent flags, so it must never be called a second time for a
 // different Connection value.

@@ -51,4 +51,9 @@ type Options struct {
 	TLSCertFile string
 	TLSKeyFile  string
 	TLSCAFile   string
+
+	// Ordered makes paho call the message callback for one message at a time, in the order
+	// messages arrive. When false, paho calls it on a new goroutine for every message: faster
+	// under load, but the order is not kept.
+	Ordered bool
 }

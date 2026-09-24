@@ -33,7 +33,7 @@ func Dial(ctx context.Context, options Options, clientID string, logger *slog.Lo
 	clientOptions.SetUsername(options.Username)
 	clientOptions.SetPassword(options.Password)
 	clientOptions.SetCleanSession(options.CleanSession)
-	clientOptions.SetOrderMatters(false)
+	clientOptions.SetOrderMatters(options.Ordered)
 	clientOptions.SetKeepAlive(time.Duration(options.KeepAliveSeconds) * time.Second)
 
 	if tlsConfig != nil {

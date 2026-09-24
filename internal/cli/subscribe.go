@@ -31,7 +31,10 @@ func newSubscribeCommand(connection *Connection, connect connectFunc) *cobra.Com
 
 			logger := newLogger(connection.LogLevel, cmd.ErrOrStderr())
 
-			client, err := connect(cmd.Context(), connection.toBrokerOptions(), connection.effectiveClientID(), logger)
+			brokerOptions := connection.toBrokerOptions()
+			brokerOptions.Ordered = subscribe.Ordered
+
+			client, err := connect(cmd.Context(), brokerOptions, connection.effectiveClientID(), logger)
 			if err != nil {
 				return fmt.Errorf("connecting to broker: %w", err)
 			}
@@ -56,4 +59,7 @@ func newSubscribeCommand(connection *Connection, connect connectFunc) *cobra.Com
 func registerSubscribeFlags(flags *pflag.FlagSet, subscribe *Subscribe) {
 	flags.BoolVar(&subscribe.DisableBar, "disable-bar", false, "Print statistics as log lines instead of a progress bar")
 	flags.Float64Var(&subscribe.ResetAfter, "reset-after", 30, "Reset counter after N seconds without a message")
+
+	// Off by default: counting doesn't care about order, and unordered is faster.
+	flags.BoolVar(&subscribe.Ordered, "ordered", false, orderedHelp)
 }

@@ -48,6 +48,13 @@ type Publish struct {
 type Subscribe struct {
 	DisableBar bool    `json:"disableBar"`
 	ResetAfter float64 `json:"resetAfter"`
+	Ordered    bool    `json:"ordered"`
+}
+
+// Dump holds the settings for the dump command.
+type Dump struct {
+	Ordered   bool `json:"ordered"`
+	ShowTopic bool `json:"showTopic"`
 }
 
 // Validate checks the connection settings and returns an error describing the first

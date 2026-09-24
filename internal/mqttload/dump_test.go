@@ -22,7 +22,7 @@ func TestRunDump_WritesPayloadsAsLines(t *testing.T) {
 	var output bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		done <- RunDump(ctx, client, discardLogger(), "load/test", 1, &output)
+		done <- RunDump(ctx, client, discardLogger(), "load/test", 1, DumpOptions{}, &output)
 	}()
 
 	waitFor(t, time.Second, func() bool { return len(client.subscribeCalls()) == 1 })
@@ -66,7 +66,7 @@ func TestRunDump_ConcurrentDeliveryProducesWholeLines(t *testing.T) {
 	var output bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		done <- RunDump(ctx, client, discardLogger(), "load/test", 1, &output)
+		done <- RunDump(ctx, client, discardLogger(), "load/test", 1, DumpOptions{}, &output)
 	}()
 
 	waitFor(t, time.Second, func() bool { return len(client.subscribeCalls()) == 1 })
@@ -117,7 +117,7 @@ func TestRunDump_SubscribeUsesRequestedTopicAndQoS(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // ctx already cancelled: RunDump returns immediately after subscribing
 
-	err := RunDump(ctx, client, discardLogger(), "load/mytopic", 2, io.Discard)
+	err := RunDump(ctx, client, discardLogger(), "load/mytopic", 2, DumpOptions{}, io.Discard)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -142,7 +142,7 @@ func TestRunDump_CancelledContextStopsAndDisconnects(t *testing.T) {
 	cancel()
 
 	var output bytes.Buffer
-	err := RunDump(ctx, client, discardLogger(), "load/test", 1, &output)
+	err := RunDump(ctx, client, discardLogger(), "load/test", 1, DumpOptions{}, &output)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -157,7 +157,7 @@ func TestRunDump_CancelledContextStopsAndDisconnects(t *testing.T) {
 func TestRunDump_FailedSubscribeReturnsError(t *testing.T) {
 	client := &fakeClient{subscribeToken: &fakeToken{completed: true, err: errors.New("boom")}}
 
-	err := RunDump(context.Background(), client, discardLogger(), "load/test", 1, io.Discard)
+	err := RunDump(context.Background(), client, discardLogger(), "load/test", 1, DumpOptions{}, io.Discard)
 	if err == nil {
 		t.Fatal("expected an error, got none")
 	}
@@ -171,8 +171,94 @@ func TestRunDump_FailedSubscribeReturnsError(t *testing.T) {
 func TestRunDump_SubscribeTimesOut(t *testing.T) {
 	client := &fakeClient{subscribeToken: &fakeToken{completed: false}}
 
-	err := RunDump(context.Background(), client, discardLogger(), "load/test", 1, io.Discard)
+	err := RunDump(context.Background(), client, discardLogger(), "load/test", 1, DumpOptions{}, io.Discard)
 	if err == nil {
 		t.Fatal("expected a timeout error, got none")
+	}
+}
+
+func TestFormatLine(t *testing.T) {
+	tests := []struct {
+		name      string
+		topic     string
+		payload   string
+		showTopic bool
+		want      string
+	}{
+		{"payload only", "load/test", `{"timestamp":1}`, false, "{\"timestamp\":1}\n"},
+		{"topic and payload", "load/test", `{"timestamp":1}`, true, "load/test\t{\"timestamp\":1}\n"},
+		{"topic with a space", "load/my topic", "x", true, "load/my topic\tx\n"},
+		{"empty payload", "load/test", "", false, "\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := string(formatLine(tt.topic, []byte(tt.payload), tt.showTopic))
+			if got != tt.want {
+				t.Errorf("formatLine = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRunDump_ShowTopicPrintsTopicAndTab checks that --show-topic reaches the output lines.
+func TestRunDump_ShowTopicPrintsTopicAndTab(t *testing.T) {
+	client := &fakeClient{}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var output bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- RunDump(ctx, client, discardLogger(), "load/test", 1, DumpOptions{ShowTopic: true}, &output)
+	}()
+
+	waitFor(t, time.Second, func() bool { return len(client.subscribeCalls()) == 1 })
+
+	client.deliver("load/test", []byte("payload"))
+	cancel()
+
+	if err := <-done; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if output.String() != "load/test\tpayload\n" {
+		t.Errorf("output = %q, want %q", output.String(), "load/test\tpayload\n")
+	}
+}
+
+// failingWriter is an io.Writer that always fails, like stdout on a full disk.
+type failingWriter struct{}
+
+func (failingWriter) Write(_ []byte) (int, error) {
+	return 0, errors.New("disk full")
+}
+
+// TestRunDump_WriteErrorStopsAndReturnsError checks that a broken output ends the run with the
+// write error, and still disconnects, instead of carrying on silently until Ctrl-C.
+func TestRunDump_WriteErrorStopsAndReturnsError(t *testing.T) {
+	client := &fakeClient{}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- RunDump(context.Background(), client, discardLogger(), "load/test", 1, DumpOptions{}, failingWriter{})
+	}()
+
+	waitFor(t, time.Second, func() bool { return len(client.subscribeCalls()) == 1 })
+
+	// A second failing write must not block: only the first error is reported.
+	client.deliver("load/test", []byte("first"))
+	client.deliver("load/test", []byte("second"))
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "disk full") {
+			t.Fatalf("expected the write error, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("RunDump did not stop after a write error")
+	}
+
+	if !client.wasDisconnected() {
+		t.Error("expected Disconnect to be called")
 	}
 }

@@ -52,6 +52,12 @@ var publishFlagSpecs = []flagSpec{
 var subscribeFlagSpecs = []flagSpec{
 	{"disable-bar", ""},
 	{"reset-after", ""},
+	{"ordered", ""},
+}
+
+var dumpFlagSpecs = []flagSpec{
+	{"ordered", ""},
+	{"show-topic", ""},
 }
 
 // TestFlagMapping checks that every flag lands on the commands the plan says it should:
@@ -64,7 +70,7 @@ func TestFlagMapping(t *testing.T) {
 		{"", append(append([]flagSpec{}, connectionFlagSpecs...), publishFlagSpecs...)},
 		{"pub", append(append([]flagSpec{}, connectionFlagSpecs...), publishFlagSpecs...)},
 		{"sub", append(append([]flagSpec{}, connectionFlagSpecs...), subscribeFlagSpecs...)},
-		{"dump", connectionFlagSpecs},
+		{"dump", append(append([]flagSpec{}, connectionFlagSpecs...), dumpFlagSpecs...)},
 	}
 
 	for _, tt := range tests {
@@ -566,6 +572,7 @@ func TestDumpConnectsWithParsedOptions(t *testing.T) {
 		Port:             1884,
 		CleanSession:     true,
 		KeepAliveSeconds: 5,
+		Ordered:          true,
 	}
 	if calls[0].options != want {
 		t.Errorf("connect options = %+v, want %+v", calls[0].options, want)
@@ -600,5 +607,39 @@ func TestDumpReturnsErrorWhenConnectFails(t *testing.T) {
 	_, err := runCommandWithConnector(t, context.Background(), connector, "dump")
 	if err == nil {
 		t.Fatal("expected an error, got none")
+	}
+}
+
+// TestOrderedFlag checks the --ordered defaults (off for sub, on for dump) and that the flag
+// reaches the broker options in both directions.
+func TestOrderedFlag(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantOrdered bool
+	}{
+		{"sub default is unordered", []string{"sub"}, false},
+		{"sub with --ordered", []string{"sub", "--ordered"}, true},
+		{"dump default is ordered", []string{"dump"}, true},
+		{"dump with --ordered=false", []string{"dump", "--ordered=false"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			connector := &fakeConnector{}
+
+			if _, err := runCommandWithConnector(t, alreadyCancelledContext(), connector, tt.args...); err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
+			calls := connector.recordedCalls()
+			if len(calls) != 1 {
+				t.Fatalf("expected exactly 1 connect call, got %d", len(calls))
+			}
+
+			if calls[0].options.Ordered != tt.wantOrdered {
+				t.Errorf("Ordered = %v, want %v", calls[0].options.Ordered, tt.wantOrdered)
+			}
+		})
 	}
 }
