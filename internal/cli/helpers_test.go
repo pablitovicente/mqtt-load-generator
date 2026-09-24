@@ -3,14 +3,12 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"log/slog"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/pablitovicente/mqtt-load-generator/internal/broker"
-	"github.com/pablitovicente/mqtt-load-generator/internal/mqttload"
 )
 
 // connectCall records one call to fakeConnector.connect.
@@ -19,15 +17,32 @@ type connectCall struct {
 	clientID string
 }
 
-// fakeConnector stands in for connectToBroker. It records what it was called with and hands
-// back a subscriber whose subscribe always succeeds, or fails with err if that is set.
-type fakeConnector struct {
-	mutex sync.Mutex
-	calls []connectCall
-	err   error
+// fakePublishCall records one publish made through a fakeConnectedClient, across every client a
+// fakeConnector handed out, so pub tests can check what was actually sent.
+type fakePublishCall struct {
+	clientID string
+	topic    string
+	qos      byte
+	payload  []byte
 }
 
-func (connector *fakeConnector) connect(_ context.Context, options broker.Options, clientID string, _ *slog.Logger) (mqttload.Subscriber, error) {
+// fakeConnector stands in for connectToBroker. It records what it was called with and hands back
+// a connectedClient that accepts every subscribe and publish, recording publishes on the connector
+// itself, or fails with err if that is set.
+type fakeConnector struct {
+	mutex sync.Mutex
+
+	calls        []connectCall
+	err          error
+	publishCalls []fakePublishCall
+	disconnects  int
+
+	// failPublish, if set, is returned as the error on every publish's token, so tests can
+	// check the failed counter and pub's exit code without a real broker.
+	failPublish error
+}
+
+func (connector *fakeConnector) connect(_ context.Context, options broker.Options, clientID string, _ *slog.Logger) (connectedClient, error) {
 	connector.mutex.Lock()
 	defer connector.mutex.Unlock()
 
@@ -36,7 +51,7 @@ func (connector *fakeConnector) connect(_ context.Context, options broker.Option
 	if connector.err != nil {
 		return nil, connector.err
 	}
-	return fakeSubscriber{}, nil
+	return &fakeConnectedClient{connector: connector, clientID: clientID}, nil
 }
 
 func (connector *fakeConnector) recordedCalls() []connectCall {
@@ -46,15 +61,58 @@ func (connector *fakeConnector) recordedCalls() []connectCall {
 	return append([]connectCall(nil), connector.calls...)
 }
 
-// fakeSubscriber accepts every subscribe and ignores disconnect. The cli tests only check what
-// sub connected with; mqttload's own tests cover the sub loop.
-type fakeSubscriber struct{}
+// recordedPublishCalls returns a copy of every publish made by any client this connector handed
+// out.
+func (connector *fakeConnector) recordedPublishCalls() []fakePublishCall {
+	connector.mutex.Lock()
+	defer connector.mutex.Unlock()
 
-func (fakeSubscriber) Subscribe(_ string, _ byte, _ func(topic string, payload []byte)) broker.Token {
+	return append([]fakePublishCall(nil), connector.publishCalls...)
+}
+
+// disconnectCount returns how many times Disconnect was called across every client this
+// connector handed out.
+func (connector *fakeConnector) disconnectCount() int {
+	connector.mutex.Lock()
+	defer connector.mutex.Unlock()
+
+	return connector.disconnects
+}
+
+// fakeConnectedClient is what fakeConnector hands back for one connected client: it satisfies
+// connectedClient (subscribe, publish and disconnect), recording what happened on the shared
+// connector so a test can inspect every client's activity in one place.
+type fakeConnectedClient struct {
+	connector *fakeConnector
+	clientID  string
+}
+
+func (client *fakeConnectedClient) Subscribe(_ string, _ byte, _ func(topic string, payload []byte)) broker.Token {
 	return succeededToken{}
 }
 
-func (fakeSubscriber) Disconnect(_ time.Duration) {}
+func (client *fakeConnectedClient) Publish(topic string, qos byte, _ bool, payload []byte) broker.Token {
+	client.connector.mutex.Lock()
+	client.connector.publishCalls = append(client.connector.publishCalls, fakePublishCall{
+		clientID: client.clientID,
+		topic:    topic,
+		qos:      qos,
+		payload:  append([]byte(nil), payload...),
+	})
+	failPublish := client.connector.failPublish
+	client.connector.mutex.Unlock()
+
+	if failPublish != nil {
+		return failedToken{err: failPublish}
+	}
+	return succeededToken{}
+}
+
+func (client *fakeConnectedClient) Disconnect(_ time.Duration) {
+	client.connector.mutex.Lock()
+	client.connector.disconnects++
+	client.connector.mutex.Unlock()
+}
 
 // succeededToken is a broker.Token that has already completed without error.
 type succeededToken struct{}
@@ -62,13 +120,11 @@ type succeededToken struct{}
 func (succeededToken) WaitTimeout(_ time.Duration) bool { return true }
 func (succeededToken) Error() error                     { return nil }
 
-// printedConfig matches the JSON that printConfig writes, so tests can read it back as typed
-// values instead of a map[string]any with type assertions.
-type printedConfig struct {
-	Connection Connection `json:"connection"`
-	Publish    *Publish   `json:"publish"`
-	Subscribe  *Subscribe `json:"subscribe"`
-}
+// failedToken is a broker.Token that has already completed with err.
+type failedToken struct{ err error }
+
+func (failedToken) WaitTimeout(_ time.Duration) bool { return true }
+func (token failedToken) Error() error               { return token.err }
 
 // runCommand builds a fresh root command, runs it with the given args, and returns everything
 // written to stdout/stderr together with any error from Execute. A fresh command is needed
@@ -86,8 +142,8 @@ func runCommand(t *testing.T, args ...string) (string, error) {
 }
 
 // runCommandWithConnector is like runCommand, but lets the caller supply the connector and the
-// context, for tests that need to inspect what sub connected with or control when sub's run
-// loop stops.
+// context, for tests that need to inspect what a command connected with or control when a
+// run loop stops.
 func runCommandWithConnector(t *testing.T, ctx context.Context, connector *fakeConnector, args ...string) (string, error) {
 	t.Helper()
 
@@ -100,17 +156,4 @@ func runCommandWithConnector(t *testing.T, ctx context.Context, connector *fakeC
 
 	err := rootCommand.ExecuteContext(ctx)
 	return output.String(), err
-}
-
-// decodeConfig parses the JSON a command printed into a printedConfig. It fails the test if
-// the output is not valid JSON.
-func decodeConfig(t *testing.T, output string) printedConfig {
-	t.Helper()
-
-	var config printedConfig
-	if err := json.Unmarshal([]byte(output), &config); err != nil {
-		t.Fatalf("could not decode config JSON: %v\noutput: %s", err, output)
-	}
-
-	return config
 }

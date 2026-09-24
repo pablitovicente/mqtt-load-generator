@@ -6,7 +6,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/pablitovicente/mqtt-load-generator/internal/broker"
 )
@@ -108,90 +107,106 @@ func TestFlagMapping(t *testing.T) {
 	}
 }
 
-// TestDefaults checks the default configuration printed by root (bare command) and pub, and
-// confirms the bare command behaves the same as pub. sub and dump no longer print their config
-// (they run for real); their defaults are covered by TestSubscribeConnectsWithParsedOptions and
-// TestDumpConnectsWithParsedOptions instead.
-func TestDefaults(t *testing.T) {
-	wantConnection := Connection{
-		Host:             "localhost",
-		Port:             1883,
-		Topic:            "/load",
-		QoS:              1,
-		CleanSession:     true,
-		KeepAliveTimeout: 5,
-		LogLevel:         "info",
-	}
-
-	wantPublish := Publish{
-		Count:              1000,
-		Size:               100,
-		Interval:           1,
-		Schedule:           "normal",
-		Clients:            1,
-		InFlight:           1,
-		AckTimeout:         30 * time.Second,
-		ConnectConcurrency: 16,
-	}
+// TestDefaultFlagValues checks the default value of every connection and publish flag straight
+// from pflag's own registration. Now that pub runs for real, running a default-sized load
+// (1000 messages, 1ms apart) just to read its config back would make the suite slow for no
+// reason, so this checks the flags directly instead.
+func TestDefaultFlagValues(t *testing.T) {
+	rootCommand := newRootCommand((&fakeConnector{}).connect)
 
 	tests := []struct {
-		name  string
-		args  []string
-		check func(t *testing.T, config printedConfig)
+		flag       string
+		want       string
+		persistent bool
 	}{
-		{"bare command runs pub", nil, func(t *testing.T, config printedConfig) {
-			if config.Connection != wantConnection {
-				t.Errorf("connection = %+v, want %+v", config.Connection, wantConnection)
-			}
-			if config.Publish == nil || *config.Publish != wantPublish {
-				t.Errorf("publish = %+v, want %+v", config.Publish, wantPublish)
-			}
-			if config.Subscribe != nil {
-				t.Errorf("expected no subscribe config, got %+v", config.Subscribe)
-			}
-		}},
-		{"pub", []string{"pub"}, func(t *testing.T, config printedConfig) {
-			if config.Connection != wantConnection {
-				t.Errorf("connection = %+v, want %+v", config.Connection, wantConnection)
-			}
-			if config.Publish == nil || *config.Publish != wantPublish {
-				t.Errorf("publish = %+v, want %+v", config.Publish, wantPublish)
-			}
-		}},
+		{"host", "localhost", true},
+		{"port", "1883", true},
+		{"topic", "/load", true},
+		{"qos", "1", true},
+		{"cleanSession", "true", true},
+		{"keepAliveTimeout", "5", true},
+		{"log-level", "info", true},
+		{"count", "1000", false},
+		{"size", "100", false},
+		{"interval", "1", false},
+		{"schedule", "normal", false},
+		{"clients", "1", false},
+		{"inflight", "1", false},
+		{"ack-timeout", "30s", false},
+		{"connect-concurrency", "16", false},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			output, err := runCommand(t, tt.args...)
-			if err != nil {
-				t.Fatalf("expected no error, got %v", err)
+		t.Run(tt.flag, func(t *testing.T) {
+			flags := rootCommand.Flags()
+			if tt.persistent {
+				flags = rootCommand.PersistentFlags()
 			}
 
-			tt.check(t, decodeConfig(t, output))
+			flag := flags.Lookup(tt.flag)
+			if flag == nil {
+				t.Fatalf("flag --%s not found", tt.flag)
+			}
+			if flag.DefValue != tt.want {
+				t.Errorf("--%s default = %q, want %q", tt.flag, flag.DefValue, tt.want)
+			}
 		})
 	}
 }
 
-// TestHostShortFlagEverywhere checks that -h sets host, not help, on every command that still
-// prints its config. sub's and dump's -h handling are covered separately, by
-// TestSubscribeConnectsWithParsedOptions and TestDumpConnectsWithParsedOptions, since neither
-// prints its config any more.
+// TestBareCommandRunsPublish checks that the bare command behaves exactly like pub for the same
+// flags: same connect options, same publish activity. Both use tiny runs (2 messages, no wait)
+// so the check stays fast.
+func TestBareCommandRunsPublish(t *testing.T) {
+	args := []string{"-c", "2", "-i", "0", "-h", "broker", "-t", "load/bare"}
+
+	bareConnector := &fakeConnector{}
+	if _, err := runCommandWithConnector(t, context.Background(), bareConnector, args...); err != nil {
+		t.Fatalf("bare command: expected no error, got %v", err)
+	}
+
+	pubConnector := &fakeConnector{}
+	if _, err := runCommandWithConnector(t, context.Background(), pubConnector, append([]string{"pub"}, args...)...); err != nil {
+		t.Fatalf("pub command: expected no error, got %v", err)
+	}
+
+	bareCalls := bareConnector.recordedCalls()
+	pubCalls := pubConnector.recordedCalls()
+	if len(bareCalls) != 1 || len(pubCalls) != 1 {
+		t.Fatalf("expected exactly 1 connect call each, got bare=%d pub=%d", len(bareCalls), len(pubCalls))
+	}
+	if bareCalls[0].options != pubCalls[0].options {
+		t.Errorf("bare options = %+v, want %+v", bareCalls[0].options, pubCalls[0].options)
+	}
+
+	barePublishes := bareConnector.recordedPublishCalls()
+	pubPublishes := pubConnector.recordedPublishCalls()
+	if len(barePublishes) != 2 || len(pubPublishes) != 2 {
+		t.Fatalf("expected 2 publishes each, got bare=%d pub=%d", len(barePublishes), len(pubPublishes))
+	}
+	if barePublishes[0].topic != "load/bare" || pubPublishes[0].topic != "load/bare" {
+		t.Errorf("expected topic load/bare, got bare=%q pub=%q", barePublishes[0].topic, pubPublishes[0].topic)
+	}
+}
+
+// TestHostShortFlagEverywhere checks that -h sets host, not help, on both the bare command and
+// pub, by checking what the fake connector was actually called with.
 func TestHostShortFlagEverywhere(t *testing.T) {
 	tests := [][]string{
-		{"-h", "broker"},
-		{"pub", "-h", "broker"},
+		{"-h", "broker", "-c", "1", "-i", "0"},
+		{"pub", "-h", "broker", "-c", "1", "-i", "0"},
 	}
 
 	for _, args := range tests {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			output, err := runCommand(t, args...)
-			if err != nil {
+			connector := &fakeConnector{}
+			if _, err := runCommandWithConnector(t, context.Background(), connector, args...); err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
-			config := decodeConfig(t, output)
-			if config.Connection.Host != "broker" {
-				t.Errorf("expected host broker, got %q", config.Connection.Host)
+			calls := connector.recordedCalls()
+			if len(calls) != 1 || calls[0].options.Host != "broker" {
+				t.Errorf("expected exactly 1 connect call with host broker, got %+v", calls)
 			}
 		})
 	}
@@ -249,29 +264,29 @@ func TestEnvironmentFallback(t *testing.T) {
 		envVar    string
 		envValue  string
 		extraArgs []string
-		extract   func(config printedConfig) string
+		extract   func(options broker.Options) string
 		want      string
 	}{
 		{
 			name:     "username",
 			envVar:   "MQTT_USERNAME",
 			envValue: "envuser",
-			extract:  func(config printedConfig) string { return config.Connection.Username },
+			extract:  func(options broker.Options) string { return options.Username },
 			want:     "envuser",
 		},
 		{
 			name:     "password",
 			envVar:   "MQTT_PASSWORD",
 			envValue: "envpass",
-			extract:  func(config printedConfig) string { return config.Connection.Password },
-			want:     "****",
+			extract:  func(options broker.Options) string { return options.Password },
+			want:     "envpass",
 		},
 		{
 			name:      "ca",
 			envVar:    "MQTT_CA",
 			envValue:  "ca.pem",
 			extraArgs: []string{"--cert", "cert.pem", "--key", "key.pem"},
-			extract:   func(config printedConfig) string { return config.Connection.TLS.CA },
+			extract:   func(options broker.Options) string { return options.TLSCAFile },
 			want:      "ca.pem",
 		},
 		{
@@ -279,7 +294,7 @@ func TestEnvironmentFallback(t *testing.T) {
 			envVar:    "MQTT_CERT",
 			envValue:  "cert.pem",
 			extraArgs: []string{"--ca", "ca.pem", "--key", "key.pem"},
-			extract:   func(config printedConfig) string { return config.Connection.TLS.Cert },
+			extract:   func(options broker.Options) string { return options.TLSCertFile },
 			want:      "cert.pem",
 		},
 		{
@@ -287,7 +302,7 @@ func TestEnvironmentFallback(t *testing.T) {
 			envVar:    "MQTT_KEY",
 			envValue:  "key.pem",
 			extraArgs: []string{"--ca", "ca.pem", "--cert", "cert.pem"},
-			extract:   func(config printedConfig) string { return config.Connection.TLS.Key },
+			extract:   func(options broker.Options) string { return options.TLSKeyFile },
 			want:      "key.pem",
 		},
 	}
@@ -296,13 +311,17 @@ func TestEnvironmentFallback(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(tt.envVar, tt.envValue)
 
-			output, err := runCommand(t, tt.extraArgs...)
-			if err != nil {
+			connector := &fakeConnector{}
+			args := append([]string{"-c", "1", "-i", "0"}, tt.extraArgs...)
+			if _, err := runCommandWithConnector(t, context.Background(), connector, args...); err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
-			config := decodeConfig(t, output)
-			if got := tt.extract(config); got != tt.want {
+			calls := connector.recordedCalls()
+			if len(calls) != 1 {
+				t.Fatalf("expected exactly 1 connect call, got %d", len(calls))
+			}
+			if got := tt.extract(calls[0].options); got != tt.want {
 				t.Errorf("expected %s=%q, got %q", tt.name, tt.want, got)
 			}
 		})
@@ -317,7 +336,7 @@ func TestFlagBeatsEnvironment(t *testing.T) {
 		envVar   string
 		envValue string
 		args     []string
-		extract  func(config printedConfig) string
+		extract  func(options broker.Options) string
 		want     string
 	}{
 		{
@@ -325,7 +344,7 @@ func TestFlagBeatsEnvironment(t *testing.T) {
 			envVar:   "MQTT_USERNAME",
 			envValue: "envuser",
 			args:     []string{"--username", "flaguser"},
-			extract:  func(config printedConfig) string { return config.Connection.Username },
+			extract:  func(options broker.Options) string { return options.Username },
 			want:     "flaguser",
 		},
 		{
@@ -333,15 +352,15 @@ func TestFlagBeatsEnvironment(t *testing.T) {
 			envVar:   "MQTT_PASSWORD",
 			envValue: "envpass",
 			args:     []string{"--password", "flagpass"},
-			extract:  func(config printedConfig) string { return config.Connection.Password },
-			want:     "****",
+			extract:  func(options broker.Options) string { return options.Password },
+			want:     "flagpass",
 		},
 		{
 			name:     "ca",
 			envVar:   "MQTT_CA",
 			envValue: "envca.pem",
 			args:     []string{"--ca", "flagca.pem", "--cert", "cert.pem", "--key", "key.pem"},
-			extract:  func(config printedConfig) string { return config.Connection.TLS.CA },
+			extract:  func(options broker.Options) string { return options.TLSCAFile },
 			want:     "flagca.pem",
 		},
 		{
@@ -349,7 +368,7 @@ func TestFlagBeatsEnvironment(t *testing.T) {
 			envVar:   "MQTT_CERT",
 			envValue: "envcert.pem",
 			args:     []string{"--ca", "ca.pem", "--cert", "flagcert.pem", "--key", "key.pem"},
-			extract:  func(config printedConfig) string { return config.Connection.TLS.Cert },
+			extract:  func(options broker.Options) string { return options.TLSCertFile },
 			want:     "flagcert.pem",
 		},
 		{
@@ -357,7 +376,7 @@ func TestFlagBeatsEnvironment(t *testing.T) {
 			envVar:   "MQTT_KEY",
 			envValue: "envkey.pem",
 			args:     []string{"--ca", "ca.pem", "--cert", "cert.pem", "--key", "flagkey.pem"},
-			extract:  func(config printedConfig) string { return config.Connection.TLS.Key },
+			extract:  func(options broker.Options) string { return options.TLSKeyFile },
 			want:     "flagkey.pem",
 		},
 	}
@@ -366,13 +385,17 @@ func TestFlagBeatsEnvironment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(tt.envVar, tt.envValue)
 
-			output, err := runCommand(t, tt.args...)
-			if err != nil {
+			connector := &fakeConnector{}
+			args := append([]string{"-c", "1", "-i", "0"}, tt.args...)
+			if _, err := runCommandWithConnector(t, context.Background(), connector, args...); err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
-			config := decodeConfig(t, output)
-			if got := tt.extract(config); got != tt.want {
+			calls := connector.recordedCalls()
+			if len(calls) != 1 {
+				t.Fatalf("expected exactly 1 connect call, got %d", len(calls))
+			}
+			if got := tt.extract(calls[0].options); got != tt.want {
 				t.Errorf("expected %s=%q, got %q", tt.name, tt.want, got)
 			}
 		})
@@ -455,28 +478,30 @@ func TestValidationEndToEnd(t *testing.T) {
 	}
 }
 
-// TestPasswordMasking checks that the password is masked when set and left as an empty
-// string when not.
-func TestPasswordMasking(t *testing.T) {
+// TestPasswordReachesConnectOptions checks that --password reaches the options used to connect
+// (with no password when it isn't set). Nothing prints the password any more (pub runs for
+// real instead of printing its config), so there's no masking left to check.
+func TestPasswordReachesConnectOptions(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
 		want string
 	}{
 		{"no password", nil, ""},
-		{"password set", []string{"--password", "secret"}, "****"},
+		{"password set", []string{"--password", "secret"}, "secret"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := runCommand(t, tt.args...)
-			if err != nil {
+			connector := &fakeConnector{}
+			args := append([]string{"-c", "1", "-i", "0"}, tt.args...)
+			if _, err := runCommandWithConnector(t, context.Background(), connector, args...); err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
-			config := decodeConfig(t, output)
-			if config.Connection.Password != tt.want {
-				t.Errorf("expected password %q, got %q", tt.want, config.Connection.Password)
+			calls := connector.recordedCalls()
+			if len(calls) != 1 || calls[0].options.Password != tt.want {
+				t.Errorf("expected password %q, got %+v", tt.want, calls)
 			}
 		})
 	}

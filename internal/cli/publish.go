@@ -1,25 +1,26 @@
 package cli
 
 import (
-	"encoding/json"
-	"fmt"
+	"context"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/pablitovicente/mqtt-load-generator/internal/mqttload"
 )
 
 // newPublishCommand creates the pub subcommand. It shares its Connection and Publish values with
 // the root command, so "mqtt-load-generator pub ..." and "mqtt-load-generator ..." behave the
-// same way and are validated and printed by the same function.
-func newPublishCommand(connection *Connection, publish *Publish) *cobra.Command {
+// same way and run through the same code.
+func newPublishCommand(connection *Connection, publish *Publish, connect connectFunc) *cobra.Command {
 	publishCommand := &cobra.Command{
 		Use:   "pub",
 		Short: "Publish MQTT messages",
 		Long:  "Publish load to an MQTT broker.",
 		Args:  cobra.NoArgs,
 
-		RunE: runPublish(connection, publish),
+		RunE: runPublish(connection, publish, connect),
 
 		SilenceUsage: true,
 	}
@@ -29,10 +30,9 @@ func newPublishCommand(connection *Connection, publish *Publish) *cobra.Command 
 	return publishCommand
 }
 
-// runPublish builds the RunE function shared by the root command and pub: validate, then
-// print the config that would be used to run. Both commands share the same connection and
-// publish values, but never run in the same invocation, so sharing is only for reuse of code.
-func runPublish(connection *Connection, publish *Publish) func(cmd *cobra.Command, args []string) error {
+// runPublish builds the RunE function shared by the root command and pub: validate, connect
+// every client (in parallel, respecting --connect-concurrency), then run the publish loop.
+func runPublish(connection *Connection, publish *Publish, connect connectFunc) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		if err := connection.Validate(); err != nil {
 			return err
@@ -42,7 +42,33 @@ func runPublish(connection *Connection, publish *Publish) func(cmd *cobra.Comman
 			return err
 		}
 
-		return printConfig(cmd, connection, publish, nil)
+		logger := newLogger(connection.LogLevel, cmd.ErrOrStderr())
+		brokerOptions := connection.toBrokerOptions()
+
+		// mqttload knows nothing about broker.Dial: it asks for one client at a time, numbered
+		// 1..N, and we connect each one from the parsed connection flags. Every client gets its
+		// own client ID: --clientID (Validate only allows that together with a single client)
+		// or a freshly generated one.
+		connectClient := func(ctx context.Context, clientNumber int) (mqttload.Publisher, error) {
+			return connect(ctx, brokerOptions, connection.effectiveClientID(), logger)
+		}
+
+		publishOptions := mqttload.PublishOptions{
+			Topic:                connection.Topic,
+			QoS:                  byte(connection.QoS),
+			Count:                publish.Count,
+			Size:                 publish.Size,
+			IntervalMilliseconds: publish.Interval,
+			Schedule:             publish.Schedule,
+			Clients:              publish.Clients,
+			Suffix:               publish.Suffix,
+			Benchmark:            publish.Benchmark,
+			InFlight:             publish.InFlight,
+			AckTimeout:           publish.AckTimeout,
+			ConnectConcurrency:   publish.ConnectConcurrency,
+		}
+
+		return mqttload.RunPublish(cmd.Context(), connectClient, logger, publishOptions, cmd.ErrOrStderr())
 	}
 }
 
@@ -62,29 +88,4 @@ func registerPublishFlags(flags *pflag.FlagSet, publish *Publish) {
 	flags.IntVar(&publish.InFlight, "inflight", 1, "Maximum number of unacknowledged publishes at once per client (1..65535)")
 	flags.DurationVar(&publish.AckTimeout, "ack-timeout", 30*time.Second, "How long to wait for a publish to be acknowledged before it counts as timed out")
 	flags.IntVar(&publish.ConnectConcurrency, "connect-concurrency", 16, "Maximum number of clients connecting at the same time")
-}
-
-// printConfig prints the configuration a command would run with, as JSON, with the password
-// masked. This stands in for the real command implementation until later iterations.
-func printConfig(cmd *cobra.Command, connection *Connection, publish *Publish, subscribe *Subscribe) error {
-	maskedConnection := *connection
-	if maskedConnection.Password != "" {
-		maskedConnection.Password = "****"
-	}
-
-	config := map[string]any{"connection": maskedConnection}
-	if publish != nil {
-		config["publish"] = publish
-	}
-	if subscribe != nil {
-		config["subscribe"] = subscribe
-	}
-
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprintln(cmd.OutOrStdout(), string(data))
-	return nil
 }

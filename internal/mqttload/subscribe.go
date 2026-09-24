@@ -1,6 +1,5 @@
 // Package mqttload holds the run loops used by the CLI commands: sub counts received
-// messages, dump prints them, pub sends them. Iteration 2 implements sub and dump; pub is
-// still to come.
+// messages, dump prints them, pub sends them.
 package mqttload
 
 import (

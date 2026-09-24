@@ -10,14 +10,22 @@ import (
 	"github.com/pablitovicente/mqtt-load-generator/internal/mqttload"
 )
 
+// connectedClient is what a connected MQTT client can do. sub and dump only subscribe, but pub also
+// publishes, so connectFunc returns an interface wide enough for all three; each command's own
+// code only calls the methods it actually needs.
+type connectedClient interface {
+	mqttload.Subscriber
+	mqttload.Publisher
+}
+
 // connectFunc opens a connection to the broker. The real one is connectToBroker; tests pass a
 // fake so they don't need a broker.
-type connectFunc func(ctx context.Context, options broker.Options, clientID string, logger *slog.Logger) (mqttload.Subscriber, error)
+type connectFunc func(ctx context.Context, options broker.Options, clientID string, logger *slog.Logger) (connectedClient, error)
 
 // connectToBroker is the real connectFunc. It checks the error before returning, because
-// returning a nil *broker.Client as a mqttload.Subscriber would give the caller a non-nil
-// interface holding a nil pointer.
-func connectToBroker(ctx context.Context, options broker.Options, clientID string, logger *slog.Logger) (mqttload.Subscriber, error) {
+// returning a nil *broker.Client as a connectedClient would give the caller a non-nil interface
+// holding a nil pointer.
+func connectToBroker(ctx context.Context, options broker.Options, clientID string, logger *slog.Logger) (connectedClient, error) {
 	client, err := broker.Dial(ctx, options, clientID, logger)
 	if err != nil {
 		return nil, err
