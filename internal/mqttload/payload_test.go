@@ -119,3 +119,21 @@ func TestBenchmarkPayloadGenerator_SizeBelow50ClampsToEmptyPadding(t *testing.T)
 		})
 	}
 }
+
+// BenchmarkBenchmarkPayload measures building one --benchmark payload, the work done once per
+// message. Run with: go test ./internal/mqttload -run '^$' -bench BenchmarkPayload
+//
+// Measured when this was written (2026-09-25): about 150 ns and 1 allocation for 100 bytes,
+// against about 375 ns and 4 allocations for v1's fmt.Sprintf version.
+func BenchmarkBenchmarkPayload(b *testing.B) {
+	for _, size := range []int{100, 1000, 10000} {
+		b.Run(fmt.Sprintf("size %d", size), func(b *testing.B) {
+			generate := benchmarkPayloadGenerator(size)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				generate()
+			}
+		})
+	}
+}

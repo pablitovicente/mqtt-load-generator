@@ -34,7 +34,7 @@ func newRootCommand(connect connectFunc) *cobra.Command {
 			return applyEnvironmentFallback(cmd)
 		},
 
-		RunE: runPublish(connection, publish, connect),
+		RunE: newPublishRunFunction(connection, publish, connect),
 
 		SilenceUsage: true,
 	}

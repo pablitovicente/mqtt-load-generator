@@ -20,7 +20,7 @@ func newPublishCommand(connection *Connection, publish *Publish, connect connect
 		Long:  "Publish load to an MQTT broker.",
 		Args:  cobra.NoArgs,
 
-		RunE: runPublish(connection, publish, connect),
+		RunE: newPublishRunFunction(connection, publish, connect),
 
 		SilenceUsage: true,
 	}
@@ -30,9 +30,10 @@ func newPublishCommand(connection *Connection, publish *Publish, connect connect
 	return publishCommand
 }
 
-// runPublish builds the RunE function shared by the root command and pub: validate, connect
-// every client (in parallel, respecting --connect-concurrency), then run the publish loop.
-func runPublish(connection *Connection, publish *Publish, connect connectFunc) func(cmd *cobra.Command, args []string) error {
+// newPublishRunFunction builds the function cobra calls when pub (or the bare command) runs. It
+// doesn't publish anything itself; it returns a function that, when called, validates, connects
+// every client (in parallel, respecting --connect-concurrency), then runs the publish loop.
+func newPublishRunFunction(connection *Connection, publish *Publish, connect connectFunc) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		if err := connection.Validate(); err != nil {
 			return err

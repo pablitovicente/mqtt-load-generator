@@ -117,66 +117,87 @@ func clientTopic(topic string, clientNumber int, suffix bool) string {
 	return fmt.Sprintf("%s/%d", topic, clientNumber)
 }
 
-// runClientPublish runs one client's share of the load: up to Options.Count publishes, each
-// waited on by its own goroutine so the client can have up to Options.InFlight publishes
-// unacknowledged at once (see the in-flight window comment below). It stops sending as soon as
-// ctx is cancelled, then waits for whatever was already in flight before disconnecting.
+// runClientPublish runs one client's share of the load: up to Options.Count publishes, with up
+// to Options.InFlight of them unacknowledged at once. It stops sending as soon as ctx is
+// cancelled, then waits for whatever was already in flight before disconnecting.
 func runClientPublish(ctx context.Context, client Publisher, clientNumber int, options PublishOptions, counters *publishCounters) {
-	topic := clientTopic(options.Topic, clientNumber, options.Suffix)
-
-	generatePayload := newPayloadGenerator(options.Size, options.Benchmark)
-
 	// Each client gets its own randomly seeded generator, so clients don't share state and
 	// runs aren't identical from one process start to the next.
 	random := rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))
-	clientPacer := newPacer(options.Schedule, options.IntervalMilliseconds, random)
 
-	// inflightSlots is the in-flight window: one code path for every --inflight value,
-	// including 1. Sending into it is "take a slot" (blocks once InFlight publishes are
-	// outstanding); the goroutine started below for each publish releases its slot by
-	// receiving from the channel once the broker has answered, or AckTimeout has passed.
-	inflightSlots := make(chan struct{}, options.InFlight)
-
-	// outstandingPublishes tracks the goroutines waiting on publish results, so the client can
-	// wait for all of them before disconnecting.
-	var outstandingPublishes sync.WaitGroup
-
-sendLoop:
-	for i := 0; i < options.Count; i++ {
-		select {
-		case inflightSlots <- struct{}{}:
-		case <-ctx.Done():
-			break sendLoop
-		}
-
-		token := client.Publish(topic, options.QoS, false, generatePayload())
-		counters.published.Add(1)
-
-		outstandingPublishes.Add(1)
-		go func(token broker.Token) {
-			defer outstandingPublishes.Done()
-			defer func() { <-inflightSlots }()
-
-			switch {
-			case !token.WaitTimeout(options.AckTimeout):
-				counters.timedOut.Add(1)
-			case token.Error() != nil:
-				counters.failed.Add(1)
-			default:
-				counters.acked.Add(1)
-			}
-		}(token)
-
-		if !clientPacer.wait(ctx) {
-			break sendLoop
-		}
+	publisher := &publishingClient{
+		client:          client,
+		topic:           clientTopic(options.Topic, clientNumber, options.Suffix),
+		generatePayload: newPayloadGenerator(options.Size, options.Benchmark),
+		pacer:           newPacer(options.Schedule, options.IntervalMilliseconds, random),
+		options:         options,
+		counters:        counters,
+		inflightSlots:   make(chan struct{}, options.InFlight),
 	}
+
+	publisher.sendMessages(ctx)
 
 	// Disconnect does not wait for acknowledgements itself, so wait for every outstanding
 	// publish to be acked, fail or time out first.
-	outstandingPublishes.Wait()
+	publisher.outstandingPublishes.Wait()
 
 	client.Disconnect(maxWaitForQueuedSends)
+}
+
+// publishingClient holds what one client needs while it publishes.
+type publishingClient struct {
+	client          Publisher
+	topic           string
+	generatePayload payloadGenerator
+	pacer           *pacer
+	options         PublishOptions
+	counters        *publishCounters
+
+	// inflightSlots is the in-flight window: one code path for every --inflight value,
+	// including 1. Sending into it is "take a slot" (blocks once InFlight publishes are
+	// outstanding); waitForResult releases the slot once the broker has answered, or
+	// AckTimeout has passed.
+	inflightSlots chan struct{}
+
+	// outstandingPublishes counts the waitForResult goroutines still running, so the client
+	// can wait for all of them before disconnecting.
+	outstandingPublishes sync.WaitGroup
+}
+
+// sendMessages publishes up to Options.Count messages, pacing them by --schedule. It returns
+// early when ctx is cancelled.
+func (publisher *publishingClient) sendMessages(ctx context.Context) {
+	for i := 0; i < publisher.options.Count; i++ {
+		if !takeSlot(ctx, publisher.inflightSlots) {
+			return
+		}
+
+		token := publisher.client.Publish(publisher.topic, publisher.options.QoS, false, publisher.generatePayload())
+		publisher.counters.published.Add(1)
+
+		publisher.outstandingPublishes.Add(1)
+		go publisher.waitForResult(token)
+
+		if !publisher.pacer.wait(ctx) {
+			return
+		}
+	}
+}
+
+// waitForResult waits for one publish to be acked, fail or time out, counts the result, and
+// frees its in-flight slot.
+func (publisher *publishingClient) waitForResult(token broker.Token) {
+	defer publisher.outstandingPublishes.Done()
+	defer func() { <-publisher.inflightSlots }()
+
+	switch {
+	case !token.WaitTimeout(publisher.options.AckTimeout):
+		publisher.counters.timedOut.Add(1)
+	case token.Error() != nil:
+		publisher.counters.failed.Add(1)
+	default:
+		publisher.counters.acked.Add(1)
+	}
 }
 
 // runPublishProgressBar shows "Publishing N messages" on output, like v1, advancing by however

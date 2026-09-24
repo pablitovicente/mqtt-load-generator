@@ -57,12 +57,9 @@ func connectClients(ctx context.Context, connect connectClientFunc, clientCount,
 	var firstError error
 	var waitGroup sync.WaitGroup
 
-launchLoop:
 	for clientNumber := 1; clientNumber <= clientCount; clientNumber++ {
-		select {
-		case concurrencySlots <- struct{}{}:
-		case <-connectCtx.Done():
-			break launchLoop
+		if !takeSlot(connectCtx, concurrencySlots) {
+			break
 		}
 
 		waitGroup.Add(1)
@@ -101,6 +98,17 @@ launchLoop:
 	}
 
 	return clients, nil
+}
+
+// takeSlot waits until slots has room and takes one place in it. It returns false, without
+// taking a place, if ctx is cancelled first.
+func takeSlot(ctx context.Context, slots chan struct{}) bool {
+	select {
+	case slots <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // disconnectAll disconnects every non-nil client in clients. Used to tear down whatever
