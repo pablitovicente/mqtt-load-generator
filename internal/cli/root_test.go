@@ -78,9 +78,9 @@ func TestFlagMapping(t *testing.T) {
 
 			command := rootCommand
 			if tt.commandName != "" {
-				for _, sub := range rootCommand.Commands() {
-					if sub.Name() == tt.commandName {
-						command = sub
+				for _, childCommand := range rootCommand.Commands() {
+					if childCommand.Name() == tt.commandName {
+						command = childCommand
 						break
 					}
 				}
@@ -104,7 +104,7 @@ func TestFlagMapping(t *testing.T) {
 
 // TestDefaults checks the default configuration printed by root (bare command), pub and dump,
 // and confirms the bare command behaves the same as pub. sub no longer prints its config (it
-// runs for real); its defaults are covered by TestSubConnectsWithParsedOptions instead.
+// runs for real); its defaults are covered by TestSubscribeConnectsWithParsedOptions instead.
 func TestDefaults(t *testing.T) {
 	wantConnection := Connection{
 		Host:             "localhost",
@@ -177,7 +177,7 @@ func TestDefaults(t *testing.T) {
 }
 
 // TestHostShortFlagEverywhere checks that -h sets host, not help, on every command that still
-// prints its config. sub's -h handling is covered separately by TestSubConnectsWithParsedOptions,
+// prints its config. sub's -h handling is covered separately by TestSubscribeConnectsWithParsedOptions,
 // since sub no longer prints its config.
 func TestHostShortFlagEverywhere(t *testing.T) {
 	tests := [][]string{
@@ -495,10 +495,10 @@ func alreadyCancelledContext() context.Context {
 	return ctx
 }
 
-// TestSubConnectsWithParsedOptions checks that sub converts its parsed connection flags into
+// TestSubscribeConnectsWithParsedOptions checks that sub converts its parsed connection flags into
 // broker.Options and connects with them, using the default generated client ID. sub no longer
 // prints its config (see TestDefaults for pub and dump).
-func TestSubConnectsWithParsedOptions(t *testing.T) {
+func TestSubscribeConnectsWithParsedOptions(t *testing.T) {
 	connector := &fakeConnector{}
 
 	output, err := runCommandWithConnector(t, alreadyCancelledContext(), connector,
@@ -527,9 +527,9 @@ func TestSubConnectsWithParsedOptions(t *testing.T) {
 	}
 }
 
-// TestSubUsesCustomClientID checks that --clientID is passed straight through instead of a
+// TestSubscribeUsesCustomClientID checks that --clientID is passed straight through instead of a
 // generated one.
-func TestSubUsesCustomClientID(t *testing.T) {
+func TestSubscribeUsesCustomClientID(t *testing.T) {
 	connector := &fakeConnector{}
 
 	_, err := runCommandWithConnector(t, alreadyCancelledContext(), connector, "sub", "--clientID", "my-client")
@@ -543,9 +543,9 @@ func TestSubUsesCustomClientID(t *testing.T) {
 	}
 }
 
-// TestSubReturnsErrorWhenConnectFails checks that a failed connection is returned as an error
+// TestSubscribeReturnsErrorWhenConnectFails checks that a failed connection is returned as an error
 // instead of panicking or exiting the process.
-func TestSubReturnsErrorWhenConnectFails(t *testing.T) {
+func TestSubscribeReturnsErrorWhenConnectFails(t *testing.T) {
 	connector := &fakeConnector{err: errors.New("connection refused")}
 
 	_, err := runCommandWithConnector(t, context.Background(), connector, "sub")

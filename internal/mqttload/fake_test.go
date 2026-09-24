@@ -53,7 +53,7 @@ func (client *fakeClient) Subscribe(topic string, qos byte, callback func(topic 
 	return &fakeToken{completed: true}
 }
 
-func (client *fakeClient) Disconnect(_ uint) {
+func (client *fakeClient) Disconnect(_ time.Duration) {
 	client.mutex.Lock()
 	defer client.mutex.Unlock()
 

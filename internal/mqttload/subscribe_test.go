@@ -62,10 +62,10 @@ func waitFor(t *testing.T, timeout time.Duration, condition func() bool) {
 	}
 }
 
-// TestRunSub_CountsDeliveredMessages checks that messages delivered through the fake client
-// reach the counter, by reading them back from a --disable-bar log line: runSub's counter is
+// TestRunSubscribe_CountsDeliveredMessages checks that messages delivered through the fake client
+// reach the counter, by reading them back from a --disable-bar log line: runSubscribe's counter is
 // unexported, so the log output is the observable proof that the subscribe callback ran.
-func TestRunSub_CountsDeliveredMessages(t *testing.T) {
+func TestRunSubscribe_CountsDeliveredMessages(t *testing.T) {
 	client := &fakeClient{}
 	logger, output := captureLogger()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -73,7 +73,7 @@ func TestRunSub_CountsDeliveredMessages(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runSub(ctx, client, logger, "load/test", 1, SubOptions{DisableBar: true, ResetAfter: time.Hour}, io.Discard, time.Millisecond, 5*time.Millisecond)
+		done <- runSubscribe(ctx, client, logger, "load/test", 1, SubscribeOptions{DisableBar: true, ResetAfter: time.Hour}, io.Discard, time.Millisecond, 5*time.Millisecond)
 	}()
 
 	waitFor(t, time.Second, func() bool { return len(client.subscribeCalls()) == 1 })
@@ -95,7 +95,7 @@ func TestRunSub_CountsDeliveredMessages(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("runSub did not return after ctx was cancelled")
+		t.Fatal("runSubscribe did not return after ctx was cancelled")
 	}
 
 	if !client.wasDisconnected() {
@@ -103,12 +103,12 @@ func TestRunSub_CountsDeliveredMessages(t *testing.T) {
 	}
 }
 
-func TestRunSub_SubscribeUsesRequestedTopicAndQoS(t *testing.T) {
+func TestRunSubscribe_SubscribeUsesRequestedTopicAndQoS(t *testing.T) {
 	client := &fakeClient{}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // ctx already cancelled: the loop returns immediately after subscribing
 
-	err := runSub(ctx, client, discardLogger(), "load/mytopic", 2, SubOptions{DisableBar: true, ResetAfter: time.Second}, io.Discard, time.Millisecond, time.Millisecond)
+	err := runSubscribe(ctx, client, discardLogger(), "load/mytopic", 2, SubscribeOptions{DisableBar: true, ResetAfter: time.Second}, io.Discard, time.Millisecond, time.Millisecond)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -125,7 +125,7 @@ func TestRunSub_SubscribeUsesRequestedTopicAndQoS(t *testing.T) {
 	}
 }
 
-func TestRunSub_CancelledContextStopsLoopAndDisconnects(t *testing.T) {
+func TestRunSubscribe_CancelledContextStopsLoopAndDisconnects(t *testing.T) {
 	tests := []struct {
 		name       string
 		disableBar bool
@@ -141,7 +141,7 @@ func TestRunSub_CancelledContextStopsLoopAndDisconnects(t *testing.T) {
 			cancel()
 
 			var output bytes.Buffer
-			err := runSub(ctx, client, discardLogger(), "load/test", 1, SubOptions{DisableBar: tt.disableBar, ResetAfter: time.Second}, &output, time.Millisecond, time.Millisecond)
+			err := runSubscribe(ctx, client, discardLogger(), "load/test", 1, SubscribeOptions{DisableBar: tt.disableBar, ResetAfter: time.Second}, &output, time.Millisecond, time.Millisecond)
 			if err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
@@ -153,10 +153,10 @@ func TestRunSub_CancelledContextStopsLoopAndDisconnects(t *testing.T) {
 	}
 }
 
-func TestRunSub_FailedSubscribeReturnsError(t *testing.T) {
+func TestRunSubscribe_FailedSubscribeReturnsError(t *testing.T) {
 	client := &fakeClient{subscribeToken: &fakeToken{completed: true, err: errors.New("boom")}}
 
-	err := runSub(context.Background(), client, discardLogger(), "load/test", 1, SubOptions{DisableBar: true, ResetAfter: time.Second}, io.Discard, time.Millisecond, time.Millisecond)
+	err := runSubscribe(context.Background(), client, discardLogger(), "load/test", 1, SubscribeOptions{DisableBar: true, ResetAfter: time.Second}, io.Discard, time.Millisecond, time.Millisecond)
 	if err == nil {
 		t.Fatal("expected an error, got none")
 	}
@@ -165,10 +165,10 @@ func TestRunSub_FailedSubscribeReturnsError(t *testing.T) {
 	}
 }
 
-func TestRunSub_SubscribeTimesOut(t *testing.T) {
+func TestRunSubscribe_SubscribeTimesOut(t *testing.T) {
 	client := &fakeClient{subscribeToken: &fakeToken{completed: false}}
 
-	err := runSub(context.Background(), client, discardLogger(), "load/test", 1, SubOptions{DisableBar: true, ResetAfter: time.Second}, io.Discard, time.Millisecond, time.Millisecond)
+	err := runSubscribe(context.Background(), client, discardLogger(), "load/test", 1, SubscribeOptions{DisableBar: true, ResetAfter: time.Second}, io.Discard, time.Millisecond, time.Millisecond)
 	if err == nil {
 		t.Fatal("expected a timeout error, got none")
 	}

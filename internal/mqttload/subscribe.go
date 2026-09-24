@@ -18,21 +18,21 @@ import (
 // satisfies it; tests use a fake.
 type Subscriber interface {
 	Subscribe(topic string, qos byte, callback func(topic string, payload []byte)) broker.Token
-	Disconnect(quiesceMilliseconds uint)
+	Disconnect(maxWaitForQueuedSends time.Duration)
 }
 
-// SubOptions holds the settings for how the sub loop reports what it counted. It is a small
+// SubscribeOptions holds the settings for how the sub loop reports what it counted. It is a small
 // copy of cli.Subscribe's fields, kept separate so this package doesn't need to import cli.
-type SubOptions struct {
+type SubscribeOptions struct {
 	DisableBar bool
 	ResetAfter time.Duration
 }
 
-// subscribeTimeout is how long RunSub waits for the broker to acknowledge the subscribe
+// subscribeTimeout is how long RunSubscribe waits for the broker to acknowledge the subscribe
 // request before giving up.
 const subscribeTimeout = 10 * time.Second
 
-// Real-world reporting intervals, used by RunSub. Tests call runSub directly with much
+// Real-world reporting intervals, used by RunSubscribe. Tests call runSubscribe directly with much
 // shorter intervals so they don't have to wait on real 100ms/1s ticks.
 const (
 	progressBarUpdateInterval = 100 * time.Millisecond
@@ -67,31 +67,31 @@ func (counter *messageCounter) reset() {
 	counter.received.Store(0)
 }
 
-// RunSub subscribes to topic at the given QoS and reports what it receives until ctx is
-// cancelled. Ctrl-C is the normal way to stop it: cancelling ctx is not an error. RunSub
+// RunSubscribe subscribes to topic at the given QoS and reports what it receives until ctx is
+// cancelled. Ctrl-C is the normal way to stop it: cancelling ctx is not an error. RunSubscribe
 // disconnects the client and returns nil once it stops.
-func RunSub(
+func RunSubscribe(
 	ctx context.Context,
 	client Subscriber,
 	logger *slog.Logger,
 	topic string,
 	qos byte,
-	options SubOptions,
+	options SubscribeOptions,
 	output io.Writer,
 ) error {
-	return runSub(ctx, client, logger, topic, qos, options, output, progressBarUpdateInterval, disableBarLogInterval)
+	return runSubscribe(ctx, client, logger, topic, qos, options, output, progressBarUpdateInterval, disableBarLogInterval)
 }
 
-// runSub does the real work. barInterval and logInterval are parameters, rather than the
+// runSubscribe does the real work. barInterval and logInterval are parameters, rather than the
 // constants above, purely so tests can drive the reporting loops without waiting on real
 // 100ms/1s ticks.
-func runSub(
+func runSubscribe(
 	ctx context.Context,
 	client Subscriber,
 	logger *slog.Logger,
 	topic string,
 	qos byte,
-	options SubOptions,
+	options SubscribeOptions,
 	output io.Writer,
 	barInterval time.Duration,
 	logInterval time.Duration,
@@ -118,7 +118,7 @@ func runSub(
 		runProgressBar(ctx, output, &counter, barInterval)
 	}
 
-	client.Disconnect(250)
+	client.Disconnect(250 * time.Millisecond)
 
 	logger.Info("sub stopped", "totalReceived", counter.received.Load())
 

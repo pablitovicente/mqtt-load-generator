@@ -54,7 +54,7 @@ func (fakeSubscriber) Subscribe(_ string, _ byte, _ func(topic string, payload [
 	return succeededToken{}
 }
 
-func (fakeSubscriber) Disconnect(_ uint) {}
+func (fakeSubscriber) Disconnect(_ time.Duration) {}
 
 // succeededToken is a broker.Token that has already completed without error.
 type succeededToken struct{}

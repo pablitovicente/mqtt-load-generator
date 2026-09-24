@@ -79,8 +79,10 @@ func (client *Client) Subscribe(topic string, qos byte, callback func(topic stri
 	})
 }
 
-// Disconnect closes the connection, waiting up to quiesceMilliseconds for outstanding work to
-// finish first.
-func (client *Client) Disconnect(quiesceMilliseconds uint) {
-	client.pahoClient.Disconnect(quiesceMilliseconds)
+// Disconnect closes the connection. Packets already queued to be sent get up to
+// maxWaitForQueuedSends to go out first. It does not wait for acknowledgements of publishes
+// already sent; callers that care wait for those tokens before disconnecting.
+func (client *Client) Disconnect(maxWaitForQueuedSends time.Duration) {
+	// paho calls this wait "quiesce" and takes it in milliseconds.
+	client.pahoClient.Disconnect(uint(maxWaitForQueuedSends.Milliseconds()))
 }
