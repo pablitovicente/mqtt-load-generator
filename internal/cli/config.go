@@ -1,0 +1,148 @@
+package cli
+
+import (
+	"fmt"
+	"time"
+)
+
+// Connection holds the settings needed to open an MQTT connection. It is shared by
+// every subcommand: pub, sub and dump all connect the same way.
+type Connection struct {
+	Host             string `json:"host"`
+	Port             int    `json:"port"`
+	Username         string `json:"username"`
+	Password         string `json:"password"`
+	Topic            string `json:"topic"`
+	QoS              int    `json:"qos"`
+	CleanSession     bool   `json:"cleanSession"`
+	ClientID         string `json:"clientID"`
+	KeepAliveTimeout int64  `json:"keepAliveTimeout"`
+	LogLevel         string `json:"logLevel"`
+	TLS              TLS    `json:"tls"`
+	MQTTS            bool   `json:"mqtts"`
+	Insecure         bool   `json:"insecure"`
+}
+
+// TLS holds the three files needed for mutual TLS. All three are required together, or none.
+type TLS struct {
+	CA   string `json:"ca"`
+	Cert string `json:"cert"`
+	Key  string `json:"key"`
+}
+
+// Publish holds the settings for the pub command (and the bare command, which runs pub).
+type Publish struct {
+	Count              int           `json:"count"`
+	Size               int           `json:"size"`
+	Interval           int           `json:"interval"`
+	Schedule           string        `json:"schedule"`
+	Clients            int           `json:"clients"`
+	Suffix             bool          `json:"suffix"`
+	Benchmark          bool          `json:"benchmark"`
+	InFlight           int           `json:"inflight"`
+	AckTimeout         time.Duration `json:"ackTimeout"`
+	ConnectConcurrency int           `json:"connectConcurrency"`
+}
+
+// Subscribe holds the settings for the sub command.
+type Subscribe struct {
+	DisableBar bool    `json:"disableBar"`
+	ResetAfter float64 `json:"resetAfter"`
+}
+
+// Validate checks the connection settings and returns an error describing the first
+// problem found.
+func (connection *Connection) Validate() error {
+	if connection.QoS < 0 || connection.QoS > 2 {
+		return fmt.Errorf("--qos must be 0, 1 or 2 (got %d)", connection.QoS)
+	}
+
+	if connection.Port < 1 || connection.Port > 65535 {
+		return fmt.Errorf("--port must be 1..65535 (got %d)", connection.Port)
+	}
+
+	if connection.KeepAliveTimeout < 0 {
+		return fmt.Errorf("--keepAliveTimeout must be at least 0 (got %d)", connection.KeepAliveTimeout)
+	}
+
+	if connection.LogLevel != "debug" && connection.LogLevel != "info" && connection.LogLevel != "warn" && connection.LogLevel != "error" {
+		return fmt.Errorf("--log-level must be debug, info, warn or error (got %q)", connection.LogLevel)
+	}
+
+	// --cert, --ca and --key only make sense together: count how many were given and
+	// reject one or two of the three, since that silently drops to plain TCP otherwise.
+	tlsFieldsSet := 0
+	if connection.TLS.CA != "" {
+		tlsFieldsSet++
+	}
+	if connection.TLS.Cert != "" {
+		tlsFieldsSet++
+	}
+	if connection.TLS.Key != "" {
+		tlsFieldsSet++
+	}
+	if tlsFieldsSet == 1 || tlsFieldsSet == 2 {
+		return fmt.Errorf("--cert, --ca, and --key must all be set together or none at all")
+	}
+
+	return nil
+}
+
+// Validate checks the publish settings on their own, without reference to the connection.
+func (publish *Publish) Validate() error {
+	if publish.Count < 1 {
+		return fmt.Errorf("--count must be at least 1 (got %d)", publish.Count)
+	}
+
+	if publish.Size < 0 {
+		return fmt.Errorf("--size must be at least 0 (got %d)", publish.Size)
+	}
+
+	if publish.Interval < 0 {
+		return fmt.Errorf("--interval must be at least 0 (got %d)", publish.Interval)
+	}
+
+	if publish.Schedule != "flat" && publish.Schedule != "normal" && publish.Schedule != "random" {
+		return fmt.Errorf("--schedule must be flat, normal or random (got %q)", publish.Schedule)
+	}
+
+	if publish.Clients < 1 {
+		return fmt.Errorf("--clients must be at least 1 (got %d)", publish.Clients)
+	}
+
+	if publish.InFlight < 1 || publish.InFlight > 65535 {
+		return fmt.Errorf("--inflight must be 1..65535 (got %d)", publish.InFlight)
+	}
+
+	if publish.AckTimeout <= 0 {
+		return fmt.Errorf("--ack-timeout must be above 0 (got %v)", publish.AckTimeout)
+	}
+
+	if publish.ConnectConcurrency < 1 {
+		return fmt.Errorf("--connect-concurrency must be at least 1 (got %d)", publish.ConnectConcurrency)
+	}
+
+	return nil
+}
+
+// ValidateWithConnection checks the publish settings together with the connection settings,
+// for the one rule that spans both: a custom client ID only makes sense with a single client.
+func (publish *Publish) ValidateWithConnection(connection *Connection) error {
+	if err := publish.Validate(); err != nil {
+		return err
+	}
+
+	if connection.ClientID != "" && publish.Clients != 1 {
+		return fmt.Errorf("--clientID can only be used with --clients 1 (broker allows one connection per client ID)")
+	}
+
+	return nil
+}
+
+// Validate checks the subscribe settings.
+func (subscribe *Subscribe) Validate() error {
+	if subscribe.ResetAfter <= 0 {
+		return fmt.Errorf("--reset-after must be above 0 (got %v)", subscribe.ResetAfter)
+	}
+	return nil
+}

@@ -3,3 +3,4 @@ cmd/checker/checker
 cmd/stdout/stdout
 .vscode/
 .idea
+bin/
