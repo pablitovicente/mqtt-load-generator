@@ -7,13 +7,22 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/pablitovicente/mqtt-load-generator/internal/mqttload"
 )
 
 // NewRootCommand builds the command tree: the root command (which runs pub when called with
 // no subcommand), plus pub, sub and dump. Connection settings live in one Connection value
 // owned here and shared by every subcommand, so the flags that describe how to connect are
 // only registered once, on the root command's persistent flags.
+//
+// Commands connect with broker.Dial. Tests use newRootCommand with a fake connect function
+// so they don't need a broker of their own.
 func NewRootCommand() *cobra.Command {
+	return newRootCommand(connectToBroker)
+}
+
+func newRootCommand(connect connectFunc) *cobra.Command {
 	connection := &Connection{}
 	publish := &Publish{}
 
@@ -45,7 +54,7 @@ func NewRootCommand() *cobra.Command {
 	registerPublishFlags(rootCommand.Flags(), publish)
 
 	rootCommand.AddCommand(newPubCommand(connection, publish))
-	rootCommand.AddCommand(newSubCommand(connection))
+	rootCommand.AddCommand(newSubCommand(connection, connect))
 	rootCommand.AddCommand(newDumpCommand(connection))
 
 	return rootCommand
@@ -72,13 +81,13 @@ func newPubCommand(connection *Connection, publish *Publish) *cobra.Command {
 }
 
 // newSubCommand creates the sub subcommand: count received messages.
-func newSubCommand(connection *Connection) *cobra.Command {
+func newSubCommand(connection *Connection, connect connectFunc) *cobra.Command {
 	subscribe := &Subscribe{}
 
 	subCommand := &cobra.Command{
 		Use:   "sub",
 		Short: "Subscribe to MQTT messages",
-		Long:  "Subscribe to an MQTT topic and count or display received messages.",
+		Long:  "Subscribe to an MQTT topic and count received messages.",
 		Args:  cobra.NoArgs,
 
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -90,7 +99,19 @@ func newSubCommand(connection *Connection) *cobra.Command {
 				return err
 			}
 
-			return printConfig(cmd, connection, nil, subscribe)
+			logger := newLogger(connection.LogLevel, cmd.ErrOrStderr())
+
+			client, err := connect(cmd.Context(), connection.toBrokerOptions(), connection.effectiveClientID(), logger)
+			if err != nil {
+				return fmt.Errorf("connecting to broker: %w", err)
+			}
+
+			subOptions := mqttload.SubOptions{
+				DisableBar: subscribe.DisableBar,
+				ResetAfter: time.Duration(subscribe.ResetAfter * float64(time.Second)),
+			}
+
+			return mqttload.RunSub(cmd.Context(), client, logger, connection.Topic, byte(connection.QoS), subOptions, cmd.ErrOrStderr())
 		},
 
 		SilenceUsage: true,

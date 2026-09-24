@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pablitovicente/mqtt-load-generator/internal/broker"
 )
 
 // flagSpec names a flag's long name and, where it has one, its shorthand.
@@ -70,7 +74,7 @@ func TestFlagMapping(t *testing.T) {
 		}
 
 		t.Run(name, func(t *testing.T) {
-			rootCommand := NewRootCommand()
+			rootCommand := newRootCommand((&fakeConnector{}).connect)
 
 			command := rootCommand
 			if tt.commandName != "" {
@@ -98,8 +102,9 @@ func TestFlagMapping(t *testing.T) {
 	}
 }
 
-// TestDefaults checks the default configuration printed by root (bare command), pub, sub and
-// dump, and confirms the bare command behaves the same as pub.
+// TestDefaults checks the default configuration printed by root (bare command), pub and dump,
+// and confirms the bare command behaves the same as pub. sub no longer prints its config (it
+// runs for real); its defaults are covered by TestSubConnectsWithParsedOptions instead.
 func TestDefaults(t *testing.T) {
 	wantConnection := Connection{
 		Host:             "localhost",
@@ -121,8 +126,6 @@ func TestDefaults(t *testing.T) {
 		AckTimeout:         30 * time.Second,
 		ConnectConcurrency: 16,
 	}
-
-	wantSubscribe := Subscribe{ResetAfter: 30}
 
 	tests := []struct {
 		name  string
@@ -146,17 +149,6 @@ func TestDefaults(t *testing.T) {
 			}
 			if config.Publish == nil || *config.Publish != wantPublish {
 				t.Errorf("publish = %+v, want %+v", config.Publish, wantPublish)
-			}
-		}},
-		{"sub", []string{"sub"}, func(t *testing.T, config printedConfig) {
-			if config.Connection != wantConnection {
-				t.Errorf("connection = %+v, want %+v", config.Connection, wantConnection)
-			}
-			if config.Subscribe == nil || *config.Subscribe != wantSubscribe {
-				t.Errorf("subscribe = %+v, want %+v", config.Subscribe, wantSubscribe)
-			}
-			if config.Publish != nil {
-				t.Errorf("expected no publish config, got %+v", config.Publish)
 			}
 		}},
 		{"dump", []string{"dump"}, func(t *testing.T, config printedConfig) {
@@ -184,12 +176,13 @@ func TestDefaults(t *testing.T) {
 	}
 }
 
-// TestHostShortFlagEverywhere checks that -h sets host, not help, on every command.
+// TestHostShortFlagEverywhere checks that -h sets host, not help, on every command that still
+// prints its config. sub's -h handling is covered separately by TestSubConnectsWithParsedOptions,
+// since sub no longer prints its config.
 func TestHostShortFlagEverywhere(t *testing.T) {
 	tests := [][]string{
 		{"-h", "broker"},
 		{"pub", "-h", "broker"},
-		{"sub", "-h", "broker"},
 		{"dump", "-h", "broker"},
 	}
 
@@ -490,5 +483,73 @@ func TestPasswordMasking(t *testing.T) {
 				t.Errorf("expected password %q, got %q", tt.want, config.Connection.Password)
 			}
 		})
+	}
+}
+
+// alreadyCancelledContext returns a context that is cancelled before it's ever used. sub runs
+// until its context is cancelled, so tests that only care about what it dialed with (not the
+// reporting loop itself) use this to make it return immediately after subscribing.
+func alreadyCancelledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+// TestSubConnectsWithParsedOptions checks that sub converts its parsed connection flags into
+// broker.Options and connects with them, using the default generated client ID. sub no longer
+// prints its config (see TestDefaults for pub and dump).
+func TestSubConnectsWithParsedOptions(t *testing.T) {
+	connector := &fakeConnector{}
+
+	output, err := runCommandWithConnector(t, alreadyCancelledContext(), connector,
+		"sub", "-h", "broker", "-p", "1884", "-t", "load/custom", "-q", "2")
+	if err != nil {
+		t.Fatalf("expected no error, got %v\noutput: %s", err, output)
+	}
+
+	calls := connector.recordedCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected exactly 1 connect call, got %d", len(calls))
+	}
+
+	want := broker.Options{
+		Host:             "broker",
+		Port:             1884,
+		CleanSession:     true,
+		KeepAliveSeconds: 5,
+	}
+	if calls[0].options != want {
+		t.Errorf("connect options = %+v, want %+v", calls[0].options, want)
+	}
+
+	if !strings.HasPrefix(calls[0].clientID, "mqtt-load-generator-") {
+		t.Errorf("expected a generated client ID, got %q", calls[0].clientID)
+	}
+}
+
+// TestSubUsesCustomClientID checks that --clientID is passed straight through instead of a
+// generated one.
+func TestSubUsesCustomClientID(t *testing.T) {
+	connector := &fakeConnector{}
+
+	_, err := runCommandWithConnector(t, alreadyCancelledContext(), connector, "sub", "--clientID", "my-client")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	calls := connector.recordedCalls()
+	if len(calls) != 1 || calls[0].clientID != "my-client" {
+		t.Fatalf("expected a single call with client ID %q, got %+v", "my-client", calls)
+	}
+}
+
+// TestSubReturnsErrorWhenConnectFails checks that a failed connection is returned as an error
+// instead of panicking or exiting the process.
+func TestSubReturnsErrorWhenConnectFails(t *testing.T) {
+	connector := &fakeConnector{err: errors.New("connection refused")}
+
+	_, err := runCommandWithConnector(t, context.Background(), connector, "sub")
+	if err == nil {
+		t.Fatal("expected an error, got none")
 	}
 }
