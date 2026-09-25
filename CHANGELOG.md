@@ -58,7 +58,8 @@ and `dump`. The code was rewritten and now has tests. 1.x releases remain availa
   `ostname`.
 - `-h` means `--host`. Help is `--help` only.
 - These are now errors: a typo in `-z`, QoS outside 0 to 2, only one or two of the TLS file
-  flags, and `--clientID` with `--clients` above 1.
+  flags, `--clientID` with `--clients` above 1, and `--insecure` without `--mqtts` or the TLS
+  file flags (1.x ignored it and connected over plain TCP).
 - `-z normal` and `-z random` wait the full average interval (see "Bugs fixed"). Runs with
   the default flags are slower than in 1.x.
 - `sub` uses the QoS given with `-q`.

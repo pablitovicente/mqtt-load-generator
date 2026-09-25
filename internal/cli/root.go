@@ -74,7 +74,10 @@ func registerConnectionFlags(flags *pflag.FlagSet, connection *Connection) {
 	flags.StringVar(&connection.TLS.CA, "ca", "", "Path to TLS CA file (env MQTT_CA)")
 	flags.StringVar(&connection.TLS.Cert, "cert", "", "Path to TLS certificate file (env MQTT_CERT)")
 	flags.StringVar(&connection.TLS.Key, "key", "", "Path to TLS private key file (env MQTT_KEY)")
-	flags.BoolVar(&connection.Insecure, "insecure", false, "Allow self-signed certificates")
+	flags.BoolVar(&connection.Insecure, "insecure", false,
+		"Skip all checks of the broker's TLS certificate, including the host name. Anyone between "+
+			"you and the broker can then pose as the broker and read the password. Only works "+
+			"with --mqtts or --cert/--ca/--key")
 	flags.BoolVar(&connection.MQTTS, "mqtts", false, "Use MQTTS (TLS)")
 	flags.BoolVar(&connection.CleanSession, "cleanSession", true, "Use a clean MQTT session instead of resuming a previous one")
 	flags.StringVar(&connection.ClientID, "clientID", "", "Custom MQTT client ID (only allowed with --clients 1)")

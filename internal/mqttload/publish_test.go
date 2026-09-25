@@ -249,10 +249,11 @@ func TestRunPublish_CtxCancelStopsEarlyAndDrains(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	progress := NewPublishProgress(options.Clients)
 
 	done := make(chan error, 1)
 	go func() {
-		done <- RunPublish(ctx, connect, discardLogger(), options, NewPublishProgress(options.Clients))
+		done <- RunPublish(ctx, connect, discardLogger(), options, progress)
 	}()
 
 	waitFor(t, time.Second, func() bool { return len(client.publishCalls()) >= 3 })
@@ -272,6 +273,13 @@ func TestRunPublish_CtxCancelStopsEarlyAndDrains(t *testing.T) {
 	published := len(client.publishCalls())
 	if published == 0 || published >= count {
 		t.Errorf("expected the run to stop early, published %d of %d", published, count)
+	}
+
+	// Every publish sent before the cancel must have been waited for before RunPublish
+	// returned: without the wait, some would still be pending here.
+	snapshot := progress.Snapshot()
+	if snapshot.Acked != snapshot.Published {
+		t.Errorf("acked %d of %d published: RunPublish returned before in-flight publishes finished", snapshot.Acked, snapshot.Published)
 	}
 	if !client.wasDisconnected() {
 		t.Error("expected Disconnect to be called")

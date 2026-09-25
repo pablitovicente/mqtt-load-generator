@@ -3,10 +3,15 @@ package display
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strconv"
 	"sync"
+	"unicode"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // DumpOptions holds the settings for how dump prints what it receives.
@@ -95,7 +100,17 @@ func formatDumpLine(topic string, payload []byte, options DumpOptions) ([]byte, 
 
 // formatJSONLine builds one {"topic":...,"payload":...} line. encoding/json checks that the
 // payload is valid JSON and writes it on one line, keeping its key order.
+//
+// encoding/json alone is not enough to make the line safe to print: it lets through invalid
+// UTF-8 inside a json.RawMessage, and characters such as C1 controls (U+0080 to U+009F, where
+// U+009B acts like ESC [ on some terminals), DEL, bidi overrides and zero-width characters.
+// So payloads that are not valid UTF-8 are rejected (JSON must be UTF-8), and escapeUnprintable
+// rewrites the rest as \uXXXX.
 func formatJSONLine(topic string, payload []byte) ([]byte, error) {
+	if !utf8.Valid(payload) {
+		return nil, errors.New("payload is not valid UTF-8")
+	}
+
 	var buffer bytes.Buffer
 
 	encoder := json.NewEncoder(&buffer)
@@ -109,10 +124,53 @@ func formatJSONLine(topic string, payload []byte) ([]byte, error) {
 		Payload json.RawMessage `json:"payload"`
 	}{topic, payload}
 
-	// Encode ends the line with a newline itself.
+	// Encode ends the line with a newline itself. The topic string is also checked here:
+	// encoding/json replaces invalid UTF-8 in it with U+FFFD.
 	if err := encoder.Encode(message); err != nil {
 		return nil, err
 	}
 
-	return buffer.Bytes(), nil
+	return escapeUnprintable(buffer.Bytes()), nil
+}
+
+// escapeUnprintable rewrites every character that is not printable (unicode.IsPrint, the rule
+// strconv.QuoteToASCII uses for the default format) as \uXXXX. Printable characters, accents
+// and other scripts included, stay as they are.
+//
+// The line stays valid JSON with the same meaning: in valid JSON these characters can only
+// appear inside strings, where \uXXXX stands for the same character. The ASCII control
+// characters below 0x20 were already escaped by encoding/json, so only DEL and non-ASCII
+// characters are left to check.
+func escapeUnprintable(line []byte) []byte {
+	// Fast path: a line with no byte at or above 0x7F (DEL) has nothing left to escape. That
+	// covers --benchmark payloads and most JSON, and costs no allocation.
+	if bytes.IndexFunc(line, func(r rune) bool { return r >= 0x7f }) == -1 {
+		return line
+	}
+
+	escaped := make([]byte, 0, len(line)+16)
+
+	for _, character := range string(line) {
+		// The newline that ends the line is not escaped.
+		if character == '\n' || unicode.IsPrint(character) {
+			escaped = utf8.AppendRune(escaped, character)
+			continue
+		}
+
+		escaped = appendUnicodeEscape(escaped, character)
+	}
+
+	return escaped
+}
+
+// appendUnicodeEscape appends character as a JSON \uXXXX escape. Characters above U+FFFF need
+// two escapes (a UTF-16 surrogate pair), as JSON requires.
+func appendUnicodeEscape(escaped []byte, character rune) []byte {
+	if character > 0xffff {
+		high, low := utf16.EncodeRune(character)
+		escaped = fmt.Appendf(escaped, `\u%04x`, high)
+		return fmt.Appendf(escaped, `\u%04x`, low)
+	}
+
+	return fmt.Appendf(escaped, `\u%04x`, character)
 }

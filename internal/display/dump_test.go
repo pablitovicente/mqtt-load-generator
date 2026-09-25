@@ -2,6 +2,7 @@ package display
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -197,5 +198,97 @@ func TestMessagePrinter_StopsWritingAfterFirstError(t *testing.T) {
 
 	if err := printer.Print("load/test", []byte("second")); err != nil {
 		t.Errorf("expected no error once the printer has already failed once, got %v", err)
+	}
+}
+
+// escape is the backslash-u that starts a JSON character escape, kept apart from the hex digits
+// so the expected lines below are plain text.
+const escape = "\\" + "u"
+
+// TestFormatJSONLine_EscapesUnprintableCharacters checks that characters a terminal could act on
+// never come out raw in --json mode, in the payload or the topic, while printable characters in
+// any script stay readable.
+func TestFormatJSONLine_EscapesUnprintableCharacters(t *testing.T) {
+	tests := []struct {
+		name    string
+		topic   string
+		payload string
+		want    string
+	}{
+		{"C1 control in payload (U+009B acts like ESC [)", "t", "\"a" + string(rune(0x9b)) + "31m\"", `{"topic":"t","payload":"a` + escape + `009b31m"}`},
+		{"C1 control in topic", "t" + string(rune(0x9b)), "1", `{"topic":"t` + escape + `009b","payload":1}`},
+		{"DEL", "t", "\"a\x7fb\"", `{"topic":"t","payload":"a` + escape + `007fb"}`},
+		{"bidi override", "t", "\"abc" + string(rune(0x202e)) + "def\"", `{"topic":"t","payload":"abc` + escape + `202edef"}`},
+		{"zero-width space", "t", "\"a" + string(rune(0x200b)) + "b\"", `{"topic":"t","payload":"a` + escape + `200bb"}`},
+		{"unprintable above U+FFFF as a surrogate pair", "t", "\"" + string(rune(0xe0001)) + "\"", `{"topic":"t","payload":"` + escape + `db40` + escape + `dc01"}`},
+		{"printable text in other scripts is kept", "tópico", "\"héllo 世界 😀\"", `{"topic":"tópico","payload":"héllo 世界 😀"}`},
+		{"plain ASCII is unchanged", "load/test", `{"timestamp":1}`, `{"topic":"load/test","payload":{"timestamp":1}}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line, err := formatJSONLine(tt.topic, []byte(tt.payload))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if got := strings.TrimSuffix(string(line), "\n"); got != tt.want {
+				t.Errorf("line = %q, want %q", got, tt.want)
+			}
+
+			// Decoding the line must give back the original topic and payload.
+			var decoded struct {
+				Topic   string          `json:"topic"`
+				Payload json.RawMessage `json:"payload"`
+			}
+			if err := json.Unmarshal(line, &decoded); err != nil {
+				t.Fatalf("line is not valid JSON: %v", err)
+			}
+			if decoded.Topic != tt.topic {
+				t.Errorf("decoded topic = %q, want %q", decoded.Topic, tt.topic)
+			}
+
+			var decodedPayload, originalPayload any
+			if err := json.Unmarshal(decoded.Payload, &decodedPayload); err != nil {
+				t.Fatalf("decoding payload: %v", err)
+			}
+			if err := json.Unmarshal([]byte(tt.payload), &originalPayload); err != nil {
+				t.Fatalf("decoding original payload: %v", err)
+			}
+			if fmt.Sprint(decodedPayload) != fmt.Sprint(originalPayload) {
+				t.Errorf("decoded payload = %v, want %v", decodedPayload, originalPayload)
+			}
+		})
+	}
+}
+
+// TestFormatJSONLine_RejectsInvalidUTF8 checks that a payload that is not valid UTF-8, such as a
+// lone 0x9B byte, is skipped instead of being copied into the line raw.
+func TestFormatJSONLine_RejectsInvalidUTF8(t *testing.T) {
+	for _, payload := range []string{"\"\x9b31m\"", "\"\xff\""} {
+		if _, err := formatJSONLine("t", []byte(payload)); err == nil {
+			t.Errorf("payload %q: expected an error, got none", payload)
+		}
+	}
+}
+
+// BenchmarkFormatJSONLine measures the --json formatting done once per message, for an ASCII
+// benchmark payload (fast path) and for a payload with non-ASCII text (character check).
+// Run with: go test ./internal/display -run '^$' -bench FormatJSONLine
+func BenchmarkFormatJSONLine(b *testing.B) {
+	payloads := map[string][]byte{
+		"ascii 1000 bytes":     []byte(`{"timestamp":1790288219472,"padding":"` + strings.Repeat("x", 950) + `"}`),
+		"non-ascii 1000 bytes": []byte(`{"text":"` + strings.Repeat("héllo 世界 ", 70) + `"}`),
+	}
+
+	for name, payload := range payloads {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := formatJSONLine("load/test", payload); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

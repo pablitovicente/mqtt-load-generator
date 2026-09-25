@@ -93,6 +93,12 @@ func (connection *Connection) Validate() error {
 		return fmt.Errorf("--cert, --ca, and --key must all be set together or none at all")
 	}
 
+	// Without TLS there is no certificate to skip checking, so --insecure would do nothing and
+	// the connection (password included) would go over plain TCP.
+	if connection.Insecure && !connection.MQTTS && tlsFieldsSet == 0 {
+		return fmt.Errorf("--insecure only works with --mqtts or --cert/--ca/--key; without them the connection is plain TCP")
+	}
+
 	return nil
 }
 

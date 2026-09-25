@@ -125,7 +125,11 @@ With `--json`, each message is one JSON object per line, with the payload embedd
 ```
 
 A payload that is not valid JSON is skipped, and a warning with its topic and size is logged.
-Valid JSON cannot contain raw control characters, so this is also safe to print. With `jq`:
+Payloads that are not valid UTF-8 are skipped the same way, because JSON must be UTF-8. Every
+character that is not printable (control characters, including the C1 range U+0080 to
+U+009F, DEL, bidi overrides, zero-width characters) is written as `\uXXXX`, in the topic and in
+the payload. Printable characters in any script are kept. Tools that read JSON decode `\uXXXX`
+back to the original character. With `jq`:
 
 ```bash
 ./bin/mqtt-load-generator dump -t /golang/pub --json | jq '.payload.timestamp'
@@ -166,6 +170,11 @@ export MQTT_PASSWORD=mega_secret
 `--cert`, `--ca` and `--key` must be given together or not at all. Giving only one or two of
 them is an error.
 
+`--insecure` turns off every check of the broker's TLS certificate, including the host name.
+Anyone between you and the broker can then pose as the broker and read the password. Use it
+only against test brokers with self-signed certificates. It needs `--mqtts` or the TLS file
+flags; on its own it is an error.
+
 ## Throughput: `--inflight`, `--ack-timeout`, `--connect-concurrency`
 
 `--inflight` is how many publishes one client can have sent but not yet acknowledged. With
@@ -175,8 +184,10 @@ next one. This is how 1.x worked.
 When a client reaches the limit, it waits for one of its outstanding publishes to be
 acknowledged, fail or time out before sending the next one. Each client sends at most
 `--inflight` messages per round trip to the broker: with a 10 ms round trip, `--inflight 1`
-allows about 100 messages per second per client, and `--inflight 50` about 5,000. Raising it
-matters most when the broker is far away or slow to acknowledge.
+allows about 100 messages per second per client, and `--inflight 50` about 5,000. Those
+numbers need `-i 0`: each client also waits `--interval` after every message, so with the
+default `-i 1` a client sends at most about 1,000 messages per second whatever `--inflight`
+is. Raising `--inflight` matters most when the broker is far away or slow to acknowledge.
 
 The limit exists because unacknowledged messages are kept in memory until the broker
 acknowledges them. The maximum is 65535, because MQTT message IDs are 16 bits. At QoS 0 there

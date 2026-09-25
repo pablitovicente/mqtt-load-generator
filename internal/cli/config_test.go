@@ -47,6 +47,17 @@ func TestConnectionValidate(t *testing.T) {
 			connection.TLS.Cert = "cert.pem"
 			connection.TLS.Key = "key.pem"
 		}, false},
+		{"insecure without tls", func(connection *Connection) { connection.Insecure = true }, true},
+		{"insecure with mqtts is valid", func(connection *Connection) {
+			connection.Insecure = true
+			connection.MQTTS = true
+		}, false},
+		{"insecure with tls files is valid", func(connection *Connection) {
+			connection.Insecure = true
+			connection.TLS.CA = "ca.pem"
+			connection.TLS.Cert = "cert.pem"
+			connection.TLS.Key = "key.pem"
+		}, false},
 	}
 
 	for _, tt := range tests {
