@@ -85,6 +85,12 @@ export MQTT_PASSWORD=mega_secret
 
 The exit code is non-zero when any publish failed or timed out.
 
+An acknowledgement means the broker accepted the message, not that a subscriber received it.
+MQTT QoS covers each hop separately (publisher to broker, broker to subscriber), and a broker
+can acknowledge a message and still drop it later, for example when a subscriber's queue is
+full. To count what was actually delivered, run `sub` on the same topic and compare its count
+with the `acked` count from `pub`.
+
 ### Subscribe (`sub`)
 
 ```bash
@@ -294,7 +300,10 @@ pauses the tool mid-run and distorts the rates it measures. The memory limit sto
 from using up the node's memory if unacknowledged messages pile up. Raise the values for
 bigger runs (more clients, higher `--inflight`, bigger payloads).
 
-The image runs as a non-root user (uid 65534).
+The image runs as a non-root user (uid 65534). Both manifests also set a `securityContext`:
+the pod must run as non-root with the default seccompProfile, and the container can't gain
+extra rights, has no Linux capabilities and a read-only filesystem. The tool only opens network
+connections and writes to stdout/stderr, so it needs none of those.
 
 Follow the Job's output:
 

@@ -14,9 +14,23 @@ spec:
       labels:
         app: mqtt-load-generator
     spec:
+      # Run as the image's non-root user (uid 65534), with the kernel calls Kubernetes allows
+      # by default.
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: mqtt-load-generator
         image: ghcr.io/pablitovicente/mqtt-load-generator:v2.0.0
+        # The tool only opens network connections and writes to stdout/stderr, so it needs no
+        # extra rights and no writable files.
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
         env:
         - name: MQTT_PASSWORD
           valueFrom:
