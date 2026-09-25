@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -37,7 +36,8 @@ func newSubscribeCommand(connection *Connection, connect connectFunc) *cobra.Com
 
 			client, err := connect(cmd.Context(), brokerOptions, connection.effectiveClientID(), logger)
 			if err != nil {
-				return fmt.Errorf("connecting to broker: %w", err)
+				// broker.Dial's error already says "connecting to <broker URL>".
+				return err
 			}
 
 			progress := mqttload.NewSubscribeProgress()

@@ -149,6 +149,12 @@ func (publisher *publishingClient) sendMessages(ctx context.Context) {
 		publisher.outstandingPublishes.Add(1)
 		go publisher.waitForResult(token)
 
+		// No wait after the last message: it would only add one interval to the run time and
+		// lower the reported messages per second.
+		if i == publisher.options.Count-1 {
+			return
+		}
+
 		if !publisher.pacer.wait(ctx) {
 			return
 		}

@@ -35,8 +35,9 @@ and `dump`. The code was rewritten and now has tests. 1.x releases remain availa
   without synchronization.
 - The load generator never seeded `math/rand`, so payloads and wait times were the same on
   every run.
-- `-z normal` and `-z random` dropped the fraction of a millisecond from each wait, so they
-  waited about half of `-i` on average.
+- `-z normal` and `-z random` dropped the fraction of a millisecond from each wait, so every
+  wait was about 0.5 ms shorter than drawn. At the default `-i 1` that is about half the
+  interval.
 - A typo in `-z` silently ran `flat`. It is now an error.
 - Giving only one or two of `--cert`/`--ca`/`--key` silently connected over plain TCP. It is
   now an error.

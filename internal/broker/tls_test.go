@@ -93,8 +93,8 @@ func TestBuildTLSConfig(t *testing.T) {
 		if len(config.Certificates) != 1 {
 			t.Errorf("expected 1 client certificate, got %d", len(config.Certificates))
 		}
-		if config.RootCAs == nil || config.ClientCAs == nil {
-			t.Errorf("expected RootCAs and ClientCAs to both be set from the CA file")
+		if config.RootCAs == nil {
+			t.Errorf("expected RootCAs to be set from the CA file")
 		}
 	})
 

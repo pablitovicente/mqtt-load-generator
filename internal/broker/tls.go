@@ -26,9 +26,8 @@ func brokerURL(options Options) string {
 
 // buildTLSConfig builds the *tls.Config to use for the connection, or nil for a plain
 // connection. With a full set of mTLS files it loads the client certificate and key, and
-// builds a certificate pool from the CA file used as both RootCAs (to verify the broker) and
-// ClientCAs (in case the broker asks for a client certificate signed by the same CA). With
-// only --mqtts it returns a TLS config with no client certificate.
+// verifies the broker's certificate against the CA file. With only --mqtts it returns a TLS
+// config with no client certificate.
 //
 // Unlike v1, a CA file that contains no usable certificates is an error instead of silently
 // connecting with an empty pool.
@@ -58,7 +57,6 @@ func buildTLSConfig(options Options) (*tls.Config, error) {
 	return &tls.Config{
 		Certificates:       []tls.Certificate{certificate},
 		RootCAs:            caCertificatePool,
-		ClientCAs:          caCertificatePool,
 		InsecureSkipVerify: options.Insecure,
 	}, nil
 }

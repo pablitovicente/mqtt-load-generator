@@ -8,54 +8,54 @@ import (
 // Connection holds the settings needed to open an MQTT connection. It is shared by
 // every subcommand: pub, sub and dump all connect the same way.
 type Connection struct {
-	Host             string `json:"host"`
-	Port             int    `json:"port"`
-	Username         string `json:"username"`
-	Password         string `json:"password"`
-	Topic            string `json:"topic"`
-	QoS              int    `json:"qos"`
-	CleanSession     bool   `json:"cleanSession"`
-	ClientID         string `json:"clientID"`
-	KeepAliveTimeout int64  `json:"keepAliveTimeout"`
-	LogLevel         string `json:"logLevel"`
-	TLS              TLS    `json:"tls"`
-	MQTTS            bool   `json:"mqtts"`
-	Insecure         bool   `json:"insecure"`
+	Host             string
+	Port             int
+	Username         string
+	Password         string
+	Topic            string
+	QoS              int
+	CleanSession     bool
+	ClientID         string
+	KeepAliveTimeout int64
+	LogLevel         string
+	TLS              TLS
+	MQTTS            bool
+	Insecure         bool
 }
 
 // TLS holds the three files needed for mutual TLS. All three are required together, or none.
 type TLS struct {
-	CA   string `json:"ca"`
-	Cert string `json:"cert"`
-	Key  string `json:"key"`
+	CA   string
+	Cert string
+	Key  string
 }
 
 // Publish holds the settings for the pub command (and the bare command, which runs pub).
 type Publish struct {
-	Count              int           `json:"count"`
-	Size               int           `json:"size"`
-	Interval           int           `json:"interval"`
-	Schedule           string        `json:"schedule"`
-	Clients            int           `json:"clients"`
-	Suffix             bool          `json:"suffix"`
-	Benchmark          bool          `json:"benchmark"`
-	InFlight           int           `json:"inflight"`
-	AckTimeout         time.Duration `json:"ackTimeout"`
-	ConnectConcurrency int           `json:"connectConcurrency"`
+	Count              int
+	Size               int
+	Interval           int
+	Schedule           string
+	Clients            int
+	Suffix             bool
+	Benchmark          bool
+	InFlight           int
+	AckTimeout         time.Duration
+	ConnectConcurrency int
 }
 
 // Subscribe holds the settings for the sub command.
 type Subscribe struct {
-	DisableBar bool    `json:"disableBar"`
-	ResetAfter float64 `json:"resetAfter"`
-	Ordered    bool    `json:"ordered"`
+	DisableBar bool
+	ResetAfter float64
+	Ordered    bool
 }
 
 // Dump holds the settings for the dump command.
 type Dump struct {
-	Ordered   bool `json:"ordered"`
-	ShowTopic bool `json:"showTopic"`
-	JSON      bool `json:"json"`
+	Ordered   bool
+	ShowTopic bool
+	JSON      bool
 }
 
 // Validate checks the connection settings and returns an error describing the first
@@ -73,7 +73,7 @@ func (connection *Connection) Validate() error {
 		return fmt.Errorf("--keepAliveTimeout must be at least 0 (got %d)", connection.KeepAliveTimeout)
 	}
 
-	if connection.LogLevel != "debug" && connection.LogLevel != "info" && connection.LogLevel != "warn" && connection.LogLevel != "error" {
+	if _, err := parseLogLevel(connection.LogLevel); err != nil {
 		return fmt.Errorf("--log-level must be debug, info, warn or error (got %q)", connection.LogLevel)
 	}
 

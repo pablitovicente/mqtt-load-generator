@@ -385,3 +385,25 @@ func TestRunPublish_CancelDuringConnectIsNotAnError(t *testing.T) {
 		t.Errorf("expected no error, got %v", err)
 	}
 }
+
+// TestRunPublish_NoWaitAfterLastMessage checks that a client doesn't wait one more interval
+// after its last message, which would add to the run time and lower the reported rate.
+func TestRunPublish_NoWaitAfterLastMessage(t *testing.T) {
+	client := &fakePublisher{}
+	connect := func(_ context.Context, _ int) (Publisher, error) { return client, nil }
+
+	options := PublishOptions{
+		Topic: "load/test", QoS: 0, Count: 1, Size: 4,
+		Schedule: "flat", IntervalMilliseconds: 500, Clients: 1,
+		InFlight: 1, AckTimeout: time.Second, ConnectConcurrency: 1,
+	}
+
+	startedAt := time.Now()
+	if err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(1)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if elapsed := time.Since(startedAt); elapsed >= 250*time.Millisecond {
+		t.Errorf("one message with -i 500 took %v; it should not wait after the last message", elapsed)
+	}
+}

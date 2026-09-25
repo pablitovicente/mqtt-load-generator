@@ -35,6 +35,8 @@ func TestConnectionValidate(t *testing.T) {
 		{"log level debug is valid", func(connection *Connection) { connection.LogLevel = "debug" }, false},
 		{"log level warn is valid", func(connection *Connection) { connection.LogLevel = "warn" }, false},
 		{"log level error is valid", func(connection *Connection) { connection.LogLevel = "error" }, false},
+		{"log level in upper case is valid", func(connection *Connection) { connection.LogLevel = "DEBUG" }, false},
+		{"log level empty", func(connection *Connection) { connection.LogLevel = "" }, true},
 		{"tls: only cert set", func(connection *Connection) { connection.TLS.Cert = "cert.pem" }, true},
 		{"tls: only ca set", func(connection *Connection) { connection.TLS.CA = "ca.pem" }, true},
 		{"tls: only key set", func(connection *Connection) { connection.TLS.Key = "key.pem" }, true},

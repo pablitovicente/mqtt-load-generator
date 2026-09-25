@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -35,7 +33,8 @@ func newDumpCommand(connection *Connection, connect connectFunc) *cobra.Command 
 
 			client, err := connect(cmd.Context(), brokerOptions, connection.effectiveClientID(), logger)
 			if err != nil {
-				return fmt.Errorf("connecting to broker: %w", err)
+				// broker.Dial's error already says "connecting to <broker URL>".
+				return err
 			}
 
 			printer := display.NewMessagePrinter(cmd.OutOrStdout(), logger, display.DumpOptions{ShowTopic: dump.ShowTopic, JSON: dump.JSON})
