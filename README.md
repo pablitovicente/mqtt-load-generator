@@ -253,6 +253,20 @@ kubectl create -f k8s/job.yaml
 kubectl create -f k8s/checker-deployment.yaml
 ```
 
+Both manifests set CPU and memory requests and a memory limit:
+
+| Manifest | CPU request | Memory request | Memory limit |
+|---|---|---|---|
+| `job.yaml` (`pub`, 100 clients) | 500m | 128Mi | 512Mi |
+| `checker-deployment.yaml` (`sub`) | 100m | 64Mi | 256Mi |
+
+There is no CPU limit. Kubernetes throttles a container that goes over its CPU limit, which
+pauses the tool mid-run and distorts the rates it measures. The memory limit stops the pod
+from using up the node's memory if unacknowledged messages pile up. Raise the values for
+bigger runs (more clients, higher `--inflight`, bigger payloads).
+
+The image runs as a non-root user (uid 65534).
+
 Follow the Job's output:
 
 ```bash
