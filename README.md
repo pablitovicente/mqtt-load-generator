@@ -7,8 +7,8 @@ subcommands:
   the binary with no subcommand also runs `pub`.
 - `sub` subscribes to a topic and counts received messages, shown as a progress bar or as log
   lines (`--disable-bar`).
-- `dump` subscribes to a topic and prints each received payload as text, one per line, on
-  stdout, optionally preceded by the topic it arrived on (`--show-topic`).
+- `dump` subscribes to a topic and prints each received payload, one per line, on stdout,
+  optionally preceded by the topic it arrived on (`--show-topic`).
 
 ## Requirements
 
@@ -102,8 +102,34 @@ Print every payload received on a topic, one per line:
 ./bin/mqtt-load-generator dump -h localhost -p 1883 -t /golang/pub
 ```
 
-With `--show-topic`, each line is `topic<TAB>payload`. The separator is a tab because MQTT
-topics can contain spaces.
+Payloads come from whoever can publish to the topic, so `dump` never writes them as they are.
+Control characters such as ESC or carriage return would be acted on by the terminal. Each
+payload is printed as a quoted string, with everything that is not printable ASCII escaped
+(Go's `strconv.QuoteToASCII`):
+
+```
+"hello"
+"{\"timestamp\":1790288219472,\"padding\":\"xxxxxxxxxx\"}"
+"\x1b[2J\xff\r"
+```
+
+The quoting loses nothing: Go's `strconv.Unquote` gives back the exact bytes.
+
+With `--show-topic`, the topic is printed first, quoted the same way, followed by a tab:
+`"load/test"<TAB>"hello"`. The separator is a tab because MQTT topics can contain spaces.
+
+With `--json`, each message is one JSON object per line, with the payload embedded as JSON:
+
+```json
+{"topic":"load/test","payload":{"timestamp":1790288219472,"padding":"xxxxxxxxxx"}}
+```
+
+A payload that is not valid JSON is skipped, and a warning with its topic and size is logged.
+Valid JSON cannot contain raw control characters, so this is also safe to print. With `jq`:
+
+```bash
+./bin/mqtt-load-generator dump -t /golang/pub --json | jq '.payload.timestamp'
+```
 
 ## Credentials and TLS
 
@@ -253,7 +279,6 @@ change. 1.x releases remain available.
 
 ## TODO
 
-- Safe output for `dump`: escape control characters in payloads and topics
 - Detailed statistics per client and in total
 
 ## Contributors

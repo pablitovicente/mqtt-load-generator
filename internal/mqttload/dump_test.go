@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -43,7 +44,7 @@ func TestRunDump_WritesPayloadsAsLines(t *testing.T) {
 		t.Fatal("RunDump did not return after ctx was cancelled")
 	}
 
-	want := "first\nsecond\n"
+	want := "\"first\"\n\"second\"\n"
 	if output.String() != want {
 		t.Errorf("output = %q, want %q", output.String(), want)
 	}
@@ -101,7 +102,7 @@ func TestRunDump_ConcurrentDeliveryProducesWholeLines(t *testing.T) {
 
 	want := make(map[string]bool, goroutineCount)
 	for _, payload := range payloads {
-		want[payload] = true
+		want[strconv.QuoteToASCII(payload)] = true
 	}
 	for _, line := range lines {
 		if !want[line] {
@@ -179,25 +180,104 @@ func TestRunDump_SubscribeTimesOut(t *testing.T) {
 
 func TestFormatLine(t *testing.T) {
 	tests := []struct {
-		name      string
-		topic     string
-		payload   string
-		showTopic bool
-		want      string
+		name    string
+		topic   string
+		payload string
+		options DumpOptions
+		want    string
 	}{
-		{"payload only", "load/test", `{"timestamp":1}`, false, "{\"timestamp\":1}\n"},
-		{"topic and payload", "load/test", `{"timestamp":1}`, true, "load/test\t{\"timestamp\":1}\n"},
-		{"topic with a space", "load/my topic", "x", true, "load/my topic\tx\n"},
-		{"empty payload", "load/test", "", false, "\n"},
+		{"plain text", "load/test", "hello", DumpOptions{}, "\"hello\"\n"},
+		{"benchmark JSON", "load/test", `{"timestamp":1,"padding":"xx"}`, DumpOptions{}, `"{\"timestamp\":1,\"padding\":\"xx\"}"` + "\n"},
+		{"escape sequence", "load/test", "\x1b[2Jboom", DumpOptions{}, `"\x1b[2Jboom"` + "\n"},
+		{"carriage return and newline", "load/test", "a\rb\nc", DumpOptions{}, `"a\rb\nc"` + "\n"},
+		{"bidi override", "load/test", "abc\u202edef", DumpOptions{}, `"abc\u202edef"` + "\n"},
+		{"invalid UTF-8", "load/test", "\xff\xfe", DumpOptions{}, `"\xff\xfe"` + "\n"},
+		{"empty payload", "load/test", "", DumpOptions{}, "\"\"\n"},
+		{"show topic", "load/test", "hello", DumpOptions{ShowTopic: true}, "\"load/test\"\t\"hello\"\n"},
+		{"topic with escape sequence", "load/\x1b[31m", "x", DumpOptions{ShowTopic: true}, `"load/\x1b[31m"` + "\t\"x\"\n"},
+		{"json embeds payload", "load/test", `{"timestamp":1, "padding":"xx"}`, DumpOptions{JSON: true}, `{"topic":"load/test","payload":{"timestamp":1,"padding":"xx"}}` + "\n"},
+		{"json keeps key order", "load/test", `{"b":1,"a":2}`, DumpOptions{JSON: true}, `{"topic":"load/test","payload":{"b":1,"a":2}}` + "\n"},
+		{"json keeps < > &", "load/test", `{"html":"<b>&</b>"}`, DumpOptions{JSON: true}, `{"topic":"load/test","payload":{"html":"<b>&</b>"}}` + "\n"},
+		{"json ignores show topic", "load/test", `1`, DumpOptions{JSON: true, ShowTopic: true}, `{"topic":"load/test","payload":1}` + "\n"},
+		{"json escapes control characters in the topic", "load/\x1b", `1`, DumpOptions{JSON: true}, `{"topic":"load/\u001b","payload":1}` + "\n"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := string(formatLine(tt.topic, []byte(tt.payload), tt.showTopic))
-			if got != tt.want {
+			got, err := formatLine(tt.topic, []byte(tt.payload), tt.options)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if string(got) != tt.want {
 				t.Errorf("formatLine = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestFormatLine_QuotedOutputGivesBackExactBytes checks that the default format loses nothing:
+// strconv.Unquote returns the original payload, byte for byte.
+func TestFormatLine_QuotedOutputGivesBackExactBytes(t *testing.T) {
+	payload := []byte{0x00, 0x1b, '[', '2', 'J', 0xff, '\r', '\n', 0xe2, 0x80, 0xae, 'x'}
+
+	line, err := formatLine("load/test", payload, DumpOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	unquoted, err := strconv.Unquote(strings.TrimSuffix(string(line), "\n"))
+	if err != nil {
+		t.Fatalf("strconv.Unquote: %v", err)
+	}
+	if !bytes.Equal([]byte(unquoted), payload) {
+		t.Errorf("unquoted = %q, want %q", unquoted, payload)
+	}
+}
+
+func TestFormatLine_JSONRejectsInvalidPayloads(t *testing.T) {
+	for _, payload := range []string{"not json", `{"open":`, "", "\x1b[2J"} {
+		t.Run(fmt.Sprintf("%q", payload), func(t *testing.T) {
+			if _, err := formatLine("load/test", []byte(payload), DumpOptions{JSON: true}); err == nil {
+				t.Error("expected an error, got none")
+			}
+		})
+	}
+}
+
+// TestRunDump_JSONSkipsInvalidPayloadsWithWarning checks that with --json a payload that is
+// not valid JSON is not written, a warning is logged without the payload, and the next valid
+// message still comes through.
+func TestRunDump_JSONSkipsInvalidPayloadsWithWarning(t *testing.T) {
+	client := &fakeClient{}
+	logger, logs := captureLogger()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var output bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- RunDump(ctx, client, logger, "load/test", 1, DumpOptions{JSON: true}, &output)
+	}()
+
+	waitFor(t, time.Second, func() bool { return len(client.subscribeCalls()) == 1 })
+
+	client.deliver("load/test", []byte("secret-not-json"))
+	client.deliver("load/test", []byte(`{"ok":true}`))
+	cancel()
+
+	if err := <-done; err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	want := `{"topic":"load/test","payload":{"ok":true}}` + "\n"
+	if output.String() != want {
+		t.Errorf("output = %q, want %q", output.String(), want)
+	}
+
+	if !strings.Contains(logs.String(), "payload is not valid JSON") {
+		t.Errorf("expected a warning in the logs, got: %s", logs.String())
+	}
+	if strings.Contains(logs.String(), "secret-not-json") {
+		t.Errorf("the warning must not include the payload, got: %s", logs.String())
 	}
 }
 
@@ -221,8 +301,8 @@ func TestRunDump_ShowTopicPrintsTopicAndTab(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if output.String() != "load/test\tpayload\n" {
-		t.Errorf("output = %q, want %q", output.String(), "load/test\tpayload\n")
+	if output.String() != "\"load/test\"\t\"payload\"\n" {
+		t.Errorf("output = %q, want %q", output.String(), "\"load/test\"\t\"payload\"\n")
 	}
 }
 

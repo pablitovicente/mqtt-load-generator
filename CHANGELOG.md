@@ -19,7 +19,9 @@ and `dump`. The code was rewritten and now has tests. 1.x releases remain availa
 - `--ordered` on `sub` and `dump`: handle received messages one at a time, in arrival order.
   Slower than parallel handling, because each message waits for the one before it. Off by
   default on `sub`, on by default on `dump`.
-- `--show-topic` on `dump`: print `topic<TAB>payload`.
+- `--show-topic` on `dump`: print the topic before each payload, separated by a tab.
+- `--json` on `dump`: print each message as `{"topic":...,"payload":...}`, with the payload
+  embedded as JSON. Payloads that are not valid JSON are skipped with a warning.
 - Environment variables for credentials and TLS files: `MQTT_USERNAME`, `MQTT_PASSWORD`,
   `MQTT_CA`, `MQTT_CERT`, `MQTT_KEY`. The 1.x flags `-u` and `-P` still work, and take
   priority over the environment variables when both are given. The TLS file flags need two
@@ -45,8 +47,9 @@ and `dump`. The code was rewritten and now has tests. 1.x releases remain availa
 ### Breaking changes
 
 - The `/checker` binary is no longer in the Docker image. Use `mqtt-load-generator sub`.
-- `stdout` is now `dump`. It prints payloads as text instead of byte numbers
-  (`[123 34 ...]`).
+- `stdout` is now `dump`. It prints each payload as a quoted string with control characters
+  escaped (`"hello"`, `"\x1b[2J"`) instead of byte numbers (`[123 34 ...]`). Raw payload
+  bytes are never written, because they could send commands to the terminal.
 - Long flags need two dashes: `--suffix`, `--insecure`, `--mqtts`, `--cleanSession` and so on.
   With one dash, the letters after the dash are read as short flags, and a 1.x command line
   stops with an error such as `unknown shorthand flag: 'm' in -mqtts` or

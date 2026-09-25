@@ -57,6 +57,7 @@ var subscribeFlagSpecs = []flagSpec{
 var dumpFlagSpecs = []flagSpec{
 	{"ordered", ""},
 	{"show-topic", ""},
+	{"json", ""},
 }
 
 // TestFlagMapping checks that every flag lands on the commands the plan says it should:

@@ -15,9 +15,12 @@ func newDumpCommand(connection *Connection, connect connectFunc) *cobra.Command 
 
 	dumpCommand := &cobra.Command{
 		Use:   "dump",
-		Short: "Dump received MQTT payloads as text",
-		Long:  "Subscribe to an MQTT topic and print each received payload as text, one per line.",
-		Args:  cobra.NoArgs,
+		Short: "Print received MQTT payloads",
+		Long: "Subscribe to an MQTT topic and print each received payload, one per line. " +
+			"Payloads are printed as quoted strings with control characters escaped (Go's " +
+			"strconv.QuoteToASCII), so no payload can send commands to your terminal. " +
+			"Use --json for JSON payloads.",
+		Args: cobra.NoArgs,
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := connection.Validate(); err != nil {
@@ -34,7 +37,7 @@ func newDumpCommand(connection *Connection, connect connectFunc) *cobra.Command 
 				return fmt.Errorf("connecting to broker: %w", err)
 			}
 
-			dumpOptions := mqttload.DumpOptions{ShowTopic: dump.ShowTopic}
+			dumpOptions := mqttload.DumpOptions{ShowTopic: dump.ShowTopic, JSON: dump.JSON}
 
 			return mqttload.RunDump(cmd.Context(), client, logger, connection.Topic, byte(connection.QoS), dumpOptions, cmd.OutOrStdout())
 		},
@@ -52,5 +55,9 @@ func registerDumpFlags(flags *pflag.FlagSet, dump *Dump) {
 	// On by default: a dump is read by a person, and lines out of order are confusing.
 	flags.BoolVar(&dump.Ordered, "ordered", true, orderedHelp)
 
-	flags.BoolVar(&dump.ShowTopic, "show-topic", false, "Print the topic and a tab before each payload")
+	flags.BoolVar(&dump.ShowTopic, "show-topic", false, "Print the topic and a tab before each payload (default format only; --json always includes the topic)")
+
+	flags.BoolVar(&dump.JSON, "json", false,
+		`Print each message as one JSON object per line: {"topic":...,"payload":...}. `+
+			"Payloads that are not valid JSON are skipped with a warning")
 }

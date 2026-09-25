@@ -55,6 +55,7 @@ type Subscribe struct {
 type Dump struct {
 	Ordered   bool `json:"ordered"`
 	ShowTopic bool `json:"showTopic"`
+	JSON      bool `json:"json"`
 }
 
 // Validate checks the connection settings and returns an error describing the first

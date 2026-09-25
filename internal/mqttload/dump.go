@@ -1,18 +1,25 @@
 package mqttload
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"sync"
 )
 
 // DumpOptions holds the settings for how dump prints what it receives.
 type DumpOptions struct {
 	// ShowTopic prints the topic and a tab before each payload. A tab, not a space, because
-	// MQTT topics may contain spaces.
+	// MQTT topics may contain spaces. Only used in the default format: JSON lines always
+	// include the topic.
 	ShowTopic bool
+
+	// JSON prints each message as one JSON object per line. See formatLine.
+	JSON bool
 }
 
 // RunDump subscribes to topic at the given QoS and writes each received payload to output as
@@ -44,7 +51,13 @@ func RunDump(
 	writeFailedOnce := false
 
 	writeLine := func(messageTopic string, payload []byte) {
-		line := formatLine(messageTopic, payload, options.ShowTopic)
+		line, err := formatLine(messageTopic, payload, options)
+		if err != nil {
+			// Only --json fails here: the payload is not valid JSON. Say so without printing
+			// the payload itself, and carry on with the next message.
+			logger.Warn("payload is not valid JSON, skipped", "topic", messageTopic, "size", len(payload))
+			return
+		}
 
 		writeMutex.Lock()
 		defer writeMutex.Unlock()
@@ -82,17 +95,51 @@ func RunDump(
 	return nil
 }
 
-// formatLine builds one output line: the payload, optionally preceded by the topic and a tab,
-// followed by a newline.
-func formatLine(topic string, payload []byte, showTopic bool) []byte {
-	line := make([]byte, 0, len(topic)+1+len(payload)+1)
-
-	if showTopic {
-		line = append(line, topic...)
-		line = append(line, '\t')
+// formatLine builds one output line for a received message.
+//
+// Payload and topic come from whoever publishes, so they are never written as they are:
+// control characters such as ESC or \r would be acted on by the terminal (and by anyone who
+// later cats a saved dump).
+//
+//   - Default: strconv.QuoteToASCII, which writes printable ASCII as itself and everything else
+//     as an escape (\x1b, \r, \u202e, ...). strconv.Unquote gives back the exact bytes.
+//   - JSON: one JSON object per line, {"topic":...,"payload":...}, with the payload embedded
+//     as JSON. Valid JSON cannot contain raw control characters. A payload that is not valid
+//     JSON returns an error and the message is skipped.
+func formatLine(topic string, payload []byte, options DumpOptions) ([]byte, error) {
+	if options.JSON {
+		return formatJSONLine(topic, payload)
 	}
 
-	line = append(line, payload...)
+	line := strconv.QuoteToASCII(string(payload)) + "\n"
 
-	return append(line, '\n')
+	if options.ShowTopic {
+		line = strconv.QuoteToASCII(topic) + "\t" + line
+	}
+
+	return []byte(line), nil
+}
+
+// formatJSONLine builds one {"topic":...,"payload":...} line. encoding/json checks that the
+// payload is valid JSON and writes it on one line, keeping its key order.
+func formatJSONLine(topic string, payload []byte) ([]byte, error) {
+	var buffer bytes.Buffer
+
+	encoder := json.NewEncoder(&buffer)
+
+	// Keep <, > and & as they are; the default turns them into \u003c etc., which is only
+	// useful when JSON is embedded in HTML.
+	encoder.SetEscapeHTML(false)
+
+	message := struct {
+		Topic   string          `json:"topic"`
+		Payload json.RawMessage `json:"payload"`
+	}{topic, payload}
+
+	// Encode ends the line with a newline itself.
+	if err := encoder.Encode(message); err != nil {
+		return nil, err
+	}
+
+	return buffer.Bytes(), nil
 }
