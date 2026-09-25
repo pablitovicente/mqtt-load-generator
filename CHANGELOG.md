@@ -1,5 +1,80 @@
 # Changelog
 
+## 2.0.0
+
+The CLI moved to Cobra: one binary, `mqtt-load-generator`, with the subcommands `pub`, `sub`
+and `dump`. The code was rewritten and now has tests. 1.x releases remain available.
+
+### New
+
+- `pub`, `sub` and `dump` subcommands. With no subcommand, the binary runs `pub`, so 1.x
+  command lines work unchanged.
+- `--inflight`: how many publishes one client can have sent but not yet acknowledged
+  (1 to 65535, default 1).
+- `--ack-timeout`: how long to wait for an acknowledgement before a publish counts as timed
+  out (default 30s).
+- `--connect-concurrency`: how many clients connect at the same time before publishing
+  starts (default 16). `1` connects one client at a time, as 1.x did.
+- `--log-level`: `debug`, `info`, `warn` or `error` (default `info`). Logs are JSON on stderr.
+- `--ordered` on `sub` and `dump`: handle received messages one at a time, in arrival order.
+  Slower than parallel handling, because each message waits for the one before it. Off by
+  default on `sub`, on by default on `dump`.
+- `--show-topic` on `dump`: print the topic before each payload, separated by a tab.
+- `--json` on `dump`: print each message as `{"topic":...,"payload":...}`, with the payload
+  embedded as JSON. Payloads that are not valid JSON are skipped with a warning.
+- Environment variables for credentials and TLS files: `MQTT_USERNAME`, `MQTT_PASSWORD`,
+  `MQTT_CA`, `MQTT_CERT`, `MQTT_KEY`. The 1.x flags `-u` and `-P` still work, and take
+  priority over the environment variables when both are given. The TLS file flags need two
+  dashes now: `--ca`, `--cert`, `--key`.
+- More TLS combinations with `--mqtts`: `--ca` on its own checks the broker's certificate
+  against that CA file (the safer alternative to `--insecure` for self-signed brokers), and
+  `--cert` with `--key` presents a client certificate while checking the broker against the
+  system's trusted CAs. 1.x only supported all three files together.
+
+### Bugs fixed
+
+- `stdout` (now `dump`) crashed on startup because the client ID was never set.
+- Publish errors were never checked. They are now counted and reported.
+- The message counter in `checker` (now `sub`) was read and written from two goroutines
+  without synchronization.
+- The load generator never seeded `math/rand`, so payloads and wait times were the same on
+  every run.
+- `-z normal` and `-z random` dropped the fraction of a millisecond from each wait, so every
+  wait was about 0.5 ms shorter than drawn. At the default `-i 1` that is about half the
+  interval.
+- A typo in `-z` silently ran `flat`. It is now an error.
+- Giving only one or two of `--cert`/`--ca`/`--key` silently connected over plain TCP. It is
+  now an error.
+- `checker` ignored `-q` and always subscribed at QoS 1.
+- After an automatic reconnect, a goroutine blocked forever.
+- The Dockerfile built single files, and would break once a package had more than one file.
+
+### Breaking changes
+
+- The `/checker` binary is no longer in the Docker image. Use `mqtt-load-generator sub`.
+- `stdout` is now `dump`. It prints each payload as a quoted string with control characters
+  escaped (`"hello"`, `"\x1b[2J"`) instead of byte numbers (`[123 34 ...]`). Raw payload
+  bytes are never written, because they could send commands to the terminal.
+- Long flags need two dashes: `--suffix`, `--insecure`, `--mqtts`, `--cleanSession` and so on.
+  With one dash, the letters after the dash are read as short flags, and a 1.x command line
+  stops with an error such as `unknown shorthand flag: 'm' in -mqtts` or
+  `invalid argument "uffix" for "-s, --size" flag`. Short flags that take text (`-h`, `-t`,
+  `-u`, `-P`, `-z`) take the rest of the word as their value: `-hostname` means host
+  `ostname`.
+- `-h` means `--host`. Help is `--help` only.
+- These are now errors: a typo in `-z`, QoS outside 0 to 2, only one or two of the TLS file
+  flags, `--clientID` with `--clients` above 1, and `--insecure` without `--mqtts` or the TLS
+  file flags (1.x ignored it and connected over plain TCP).
+- `-z normal` and `-z random` wait the full average interval (see "Bugs fixed"). Runs with
+  the default flags are slower than in 1.x.
+- `sub` uses the QoS given with `-q`.
+- `sub --disable-bar --reset-after N` still restarts the logged count after N seconds without
+  a message, but the final "sub stopped" line reports every message received since `sub`
+  started, not only those since the last reset.
+- `pub` exits with a non-zero code when any publish failed or timed out.
+- Logs are JSON on stderr.
+- The `pkg/MQTTClient` package is removed.
+
 ## 1.0.0
 
 - Add MIT license

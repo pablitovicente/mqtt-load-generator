@@ -1,126 +1,337 @@
 # MQTT Load Generator
 
-A very simple MQTT load generator tool written in Go. The tool will first establish all the connections to the target broker
-and only then start the publishing of messages.
+An MQTT load generator written in Go. One binary, `mqtt-load-generator`, with three
+subcommands:
 
-A simple checker that counts received messages is also provided.
+- `pub` publishes messages. It connects all clients first, then starts publishing. Running
+  the binary with no subcommand also runs `pub`.
+- `sub` subscribes to a topic and counts received messages, shown as a progress bar or as log
+  lines (`--disable-bar`).
+- `dump` subscribes to a topic and prints each received payload, one per line, on stdout,
+  optionally preceded by the topic it arrived on (`--show-topic`).
 
 ## Requirements
 
-- Go 1.19.1+ (probably works with older versions too!)
+- Go 1.27 or newer
 
 ## Build
 
-- `./build_all.sh` will generate the binaries
-  - `cmd/load_generator/mqtt-load-generator`
-  - `cmd/checker/checker`
+```bash
+make build
+```
+
+This builds `bin/mqtt-load-generator` for the current OS and architecture. To build for
+another platform, set `GOOS`/`GOARCH`. For a Raspberry Pi with 64-bit Raspberry Pi OS:
+
+```bash
+make build GOARCH=arm64
+```
+
+For 32-bit Raspberry Pi OS:
+
+```bash
+make build GOARCH=arm GOARM=7
+```
+
+## Development
+
+| Target | Does |
+|---|---|
+| `make test` | Runs the tests with the race detector |
+| `make lint` | Runs golangci-lint |
+| `make nilaway` | Checks for possible nil pointer panics with nilaway |
+| `make check` | Runs `lint`, `nilaway` and `test` |
+| `make docker` | Builds the Docker image |
+
+`make lint` and `make nilaway` need golangci-lint v2 and nilaway installed, built with Go 1.27
+or newer. A copy built with an older Go refuses to check this module. When a tool is missing,
+the target stops and prints the install command. Install both with:
+
+```bash
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+go install go.uber.org/nilaway/cmd/nilaway@latest
+```
+
+The golangci-lint site (golangci-lint.run) lists other ways to install it.
 
 ## Run
 
-- `./cmd/load_generator/mqtt-load-generator --help` will show all the supported options for the load generator
-- `./cmd/checker/checker --help` will show all the supported options for the checker
-
-Example to publish 1000 messages with 1KB payload size with a 1 ms wait between messages using 100 concurrent clients
+`-h` is short for `--host`, as in `mosquitto_pub`. Help is `--help` only.
 
 ```bash
-./cmd/load_generator/mqtt-load-generator  -c 1000 -s 1000 -t /golang/pub -i 1 -n 100 -u secret -P mega_secret -h localhost -p 1883
+./bin/mqtt-load-generator --help
+./bin/mqtt-load-generator pub --help
+./bin/mqtt-load-generator sub --help
+./bin/mqtt-load-generator dump --help
 ```
 
-To count incoming messages you can use the checker
+### Publish (`pub`, or no subcommand)
+
+Publish 1000 messages of 1000 bytes from each of 100 clients, waiting 1 ms between messages:
 
 ```bash
-./cmd/checker/checker -h localhost -p 1883 -u secret -P ultra_secret -t /golang/pub
+./bin/mqtt-load-generator -c 1000 -s 1000 -t /golang/pub -i 1 -n 100 -h localhost -p 1883 \
+  -u secret -P mega_secret
 ```
 
-To check all the available options run
+The same run with the subcommand and long flag names, and the password from an environment
+variable (see "Credentials and TLS"):
 
 ```bash
-./cmd/load_generator/mqtt-load-generator --help
+export MQTT_PASSWORD=mega_secret
+./bin/mqtt-load-generator pub --count 1000 --size 1000 --topic /golang/pub --interval 1 \
+  --clients 100 --host localhost --port 1883 --username secret
 ```
 
-## Docker image
+The exit code is non-zero when any publish failed or timed out.
 
-To create a docker image for the load generator:
+An acknowledgement means the broker accepted the message, not that a subscriber received it.
+MQTT QoS covers each hop separately (publisher to broker, broker to subscriber), and a broker
+can acknowledge a message and still drop it later, for example when a subscriber's queue is
+full. To count what was actually delivered, run `sub` on the same topic and compare its count
+with the `acked` count from `pub`.
+
+### Subscribe (`sub`)
+
+```bash
+./bin/mqtt-load-generator sub -h localhost -p 1883 -u secret -P mega_secret -t /golang/pub
+```
+
+With `--disable-bar`, counts are printed as log lines instead of a progress bar. Use it when
+the output is not a terminal, for example in a container or in CI.
+
+### Dump (`dump`)
+
+Print every payload received on a topic, one per line:
+
+```bash
+./bin/mqtt-load-generator dump -h localhost -p 1883 -t /golang/pub
+```
+
+Payloads come from whoever can publish to the topic, so `dump` never writes them as they are.
+Control characters such as ESC or carriage return would be acted on by the terminal. Each
+payload is printed as a quoted string, with everything that is not printable ASCII escaped
+(Go's `strconv.QuoteToASCII`):
+
+```
+"hello"
+"{\"timestamp\":1790288219472,\"padding\":\"xxxxxxxxxx\"}"
+"\x1b[2J\xff\r"
+```
+
+The quoting loses nothing: Go's `strconv.Unquote` gives back the exact bytes.
+
+With `--show-topic`, the topic is printed first, quoted the same way, followed by a tab:
+`"load/test"<TAB>"hello"`. The separator is a tab because MQTT topics can contain spaces.
+
+With `--json`, each message is one JSON object per line, with the payload embedded as JSON:
+
+```json
+{"topic":"load/test","payload":{"timestamp":1790288219472,"padding":"xxxxxxxxxx"}}
+```
+
+A payload that is not valid JSON is skipped, and a warning with its topic and size is logged.
+Payloads that are not valid UTF-8 are skipped the same way, because JSON must be UTF-8. Every
+character that is not printable (control characters, including the C1 range U+0080 to
+U+009F, DEL, bidi overrides, zero-width characters) is written as `\uXXXX`, in the topic and in
+the payload. Printable characters in any script are kept. Tools that read JSON decode `\uXXXX`
+back to the original character. With `jq`:
+
+```bash
+./bin/mqtt-load-generator dump -t /golang/pub --json | jq '.payload.timestamp'
+```
+
+## Credentials and TLS
+
+Username, password and the three TLS file paths can be given as flags or as environment
+variables. The 1.x flags `-u` and `-P` still work, and take priority over the environment
+variables when both are given. The TLS file flags need two dashes now: `--ca`, `--cert`,
+`--key`.
+
+| Flag | Environment variable |
+|---|---|
+| `-u`, `--username` | `MQTT_USERNAME` |
+| `-P`, `--password` | `MQTT_PASSWORD` |
+| `--ca` | `MQTT_CA` |
+| `--cert` | `MQTT_CERT` |
+| `--key` | `MQTT_KEY` |
+
+A password given with `-P` is visible to every user on the machine in `ps` output.
+`MQTT_PASSWORD` is not. In Kubernetes, it can come from a Secret (see below).
+
+As a flag:
+
+```bash
+./bin/mqtt-load-generator sub -h broker -u secret -P mega_secret -t /golang/pub
+```
+
+As environment variables:
+
+```bash
+export MQTT_USERNAME=secret
+export MQTT_PASSWORD=mega_secret
+./bin/mqtt-load-generator sub -h broker -t /golang/pub
+```
+
+TLS is on with `--mqtts`, or when all three of `--ca`, `--cert` and `--key` are given (as in
+1.x). The TLS flags then change how the broker is checked and whether the client presents a
+certificate:
+
+| Flags | Broker's certificate checked against | Client certificate |
+|---|---|---|
+| `--mqtts` | the system's trusted CAs | none |
+| `--mqtts --ca ca.pem` | `ca.pem` | none |
+| `--mqtts --cert c.pem --key k.pem` | the system's trusted CAs | `c.pem` (mutual TLS) |
+| `--ca ca.pem --cert c.pem --key k.pem` | `ca.pem` | `c.pem` (mutual TLS) |
+
+`--cert` and `--key` go together. `--ca` alone, or `--cert` and `--key` without `--ca`, need
+`--mqtts`.
+
+For a broker with a self-signed certificate, `--mqtts --ca ca.pem` keeps the check and is the
+safer choice over `--insecure`:
+
+```bash
+./bin/mqtt-load-generator sub -h broker --mqtts --ca ca-cert.pem -t /golang/pub
+```
+
+`--insecure` turns off every check of the broker's TLS certificate, including the host name.
+Anyone between you and the broker can then pose as the broker and read the password. Use it
+only against test brokers with self-signed certificates. It needs `--mqtts` or the TLS file
+flags; on its own it is an error.
+
+## Throughput: `--inflight`, `--ack-timeout`, `--connect-concurrency`
+
+`--inflight` is how many publishes one client can have sent but not yet acknowledged. With
+the default, 1, each client waits for the acknowledgement of a message before sending the
+next one. This is how 1.x worked.
+
+When a client reaches the limit, it waits for one of its outstanding publishes to be
+acknowledged, fail or time out before sending the next one. Each client sends at most
+`--inflight` messages per round trip to the broker: with a 10 ms round trip, `--inflight 1`
+allows about 100 messages per second per client, and `--inflight 50` about 5,000. Those
+numbers need `-i 0`: each client also waits `--interval` after every message, so with the
+default `-i 1` a client sends at most about 1,000 messages per second whatever `--inflight`
+is. Raising `--inflight` matters most when the broker is far away or slow to acknowledge.
+
+The limit exists because unacknowledged messages are kept in memory until the broker
+acknowledges them. The maximum is 65535, because MQTT message IDs are 16 bits. At QoS 0 there
+are no acknowledgements, so `--inflight` has no effect there.
+
+`--ack-timeout` (default 30s) is how long to wait for an acknowledgement before counting the
+publish as timed out. With a high `--inflight` on a busy broker, acknowledgements take longer;
+raise this if runs report timeouts.
+
+`--connect-concurrency` (default 16) is how many clients connect at the same time before
+publishing starts. Some brokers limit how fast new connections can arrive, or run a slow
+authentication check for each one. `--connect-concurrency 1` connects one client at a time,
+as 1.x did.
+
+## `--ordered` on `sub` and `dump`
+
+With `--ordered`, received messages are handled one at a time, in the order they arrive.
+Without it, they are handled in parallel and the order can change.
+
+Ordered is slower. Each message waits until the one before it has been handled, so under
+heavy load the tool can fall behind the broker.
+
+| Command | Default | Reason |
+|---|---|---|
+| `sub` | off | Counting does not depend on order |
+| `dump` | on | Printed lines are read by a person |
+
+Turn it on for `sub` with `--ordered`, or off for `dump` with `--ordered=false`.
+
+## `--benchmark` payloads
+
+With `--benchmark`, each payload is JSON instead of random bytes:
+
+```json
+{"timestamp":1699999999999,"padding":"xxxx..."}
+```
+
+`timestamp` is the publish time in Unix milliseconds. `padding` fills the payload up to
+`--size` bytes, and is empty when `--size` is below 50. The format does not change between
+versions, because some collectors read `timestamp` from it to measure latency. `sub` does not
+compute latency.
+
+## Docker
+
+Build:
 
 ```bash
 docker build -t mqtt-load-generator .
 ```
 
-### Running the load generator
-
-To run a docker container from it reuse the same command line like above with:
+Run `pub` with 1.x-style arguments:
 
 ```bash
-docker run --rm -it mqtt-load-generator -c 1000 -s 1000 -t /golang/pub -i 1 -n 100 -u secret -P mega_secret -h localhost -p 1883 
+docker run --rm -e MQTT_PASSWORD=mega_secret mqtt-load-generator \
+  -c 1000 -s 1000 -t /golang/pub -i 1 -n 100 -u secret -h mqtt-broker -p 1883
 ```
 
-### Running the checker
+Run `sub`:
 
 ```bash
-docker run --entrypoint /checker --rm -it mqtt-load-generator -t /golang/pub -u secret -P mega_secret -h localhost -p 1883 
+docker run --rm -e MQTT_PASSWORD=mega_secret mqtt-load-generator \
+  sub -h mqtt-broker -p 1883 -u secret -t /golang/pub --disable-bar
 ```
 
-## Run on Kubernetes
-Here are a few methods of running the image in a Kubernetes cluster
-(e.g., to creating the load nearer to cluster resources by using cluster-local addresses):
+## Kubernetes
 
-### Running the load generator
+`k8s/job.yaml` runs `pub` as a Job. `k8s/checker-deployment.yaml` runs `sub` as a
+Deployment. Both read the MQTT password from the Secret in `k8s/secret.yaml`. Change the
+placeholder password in that file before applying it.
 
 ```bash
-kubectl run mqtt-load-generator --image=ghcr.io/pablitovicente/mqtt-load-generator:v1.0.7  \
-  -- -h <mqtt-broker-address> -p 1883 -u secret -P mega_secret \
-     -c 1000 -s 1000 -t /golang/pub -i 1 -n 100
+kubectl create -f k8s/secret.yaml
+kubectl create -f k8s/job.yaml
+kubectl create -f k8s/checker-deployment.yaml
 ```
 
+Both manifests set CPU and memory requests and a memory limit:
 
-### Running the load checker
+| Manifest | CPU request | Memory request | Memory limit |
+|---|---|---|---|
+| `job.yaml` (`pub`, 100 clients) | 500m | 128Mi | 512Mi |
+| `checker-deployment.yaml` (`sub`) | 100m | 64Mi | 256Mi |
 
-```bash
-kubectl run mqtt-load-checker --image=ghcr.io/pablitovicente/mqtt-load-generator:v1.0.7 --command \
-  -- /checker -h <mqtt-broker-address> -p 1883 -u secret -P mega_secret \
-      -t /golang/pub --disable-bar
-```
+There is no CPU limit. Kubernetes throttles a container that goes over its CPU limit, which
+pauses the tool mid-run and distorts the rates it measures. The memory limit stops the pod
+from using up the node's memory if unacknowledged messages pile up. Raise the values for
+bigger runs (more clients, higher `--inflight`, bigger payloads).
 
-### Running the load generator as a Kubernetes Job
-To run as a Kubernetes job you can adjust the file `k8s/job.yaml` and apply it with:
- 
- ```bash
- kubectl create -f k8s/job.yaml
- ```
+The image runs as a non-root user (uid 65534). Both manifests also set a `securityContext`:
+the pod must run as non-root with the default seccompProfile, and the container can't gain
+extra rights, has no Linux capabilities and a read-only filesystem. The tool only opens network
+connections and writes to stdout/stderr, so it needs none of those.
 
-To view the log output use: 
+Follow the Job's output:
+
 ```bash
 kubectl logs -f -l job-name=mqtt-load-generator
 ```
 
-To restart when one run is finished you can use:
+Run the Job again after it finished:
+
 ```bash
 kubectl delete jobs.batch -l app=mqtt-load-generator ; kubectl create -f k8s/job.yaml
 ```
 
-**Run multiple jobs parallel**
+To run several Jobs in parallel, set `spec.parallelism` in `k8s/job.yaml`. To remove all Jobs
+from this tool:
 
-To run multiple jobs in parallel you adjust parameter `spec.parallelism` in `k8s/job.yaml`
-
-**Delete multiple jobs**
-
-To clean up all mqtt-load-generator jobs you can run:
 ```bash
 kubectl delete jobs.batch -l app=mqtt-load-generator
 ```
 
-### Running the load checker as Kubernetes Deployment
- ```bash
- kubectl create -f k8s/checker-deployment.yaml
- ```
+## Upgrading from 1.x
+
+2.0.0 changes some flags and commands. The "2.0.0" section of `CHANGELOG.md` lists every
+change. 1.x releases remain available.
 
 ## TODO
 
-- Use more idiomatic Go style
-- ~~Support TLS~~ Added
-- ~~Support mTlS~~ Added
-- Improve error handling
-- Add tests (this should be first :P)
+- Detailed statistics per client and in total
 
 ## Contributors
 

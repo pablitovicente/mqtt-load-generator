@@ -13,23 +13,48 @@ spec:
       labels:
         app: mqtt-checker
     spec:
+      # Run as the image's non-root user (uid 65534), with the kernel calls Kubernetes allows
+      # by default.
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: mqtt-checker
-        image: pgschk/mqtt-load-generator:latest
+        image: ghcr.io/pablitovicente/mqtt-load-generator:v2.0.0
         command:
-        - /checker
+        - /mqtt-load-generator
+        # The tool only opens network connections and writes to stdout/stderr, so it needs no
+        # extra rights and no writable files.
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        # No CPU limit on purpose: Kubernetes throttles a container that goes over its CPU limit,
+        # which pauses the tool mid-run and distorts the rates it measures. The memory limit
+        # stops runaway buffering from affecting the node. Raise these for bigger runs.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+        env:
+        - name: MQTT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mqtt-load-generator
+              key: password
         args:
+        - sub
         - -h
         -  mqtt # hostname of mqtt server
         - -p
         - "1883" # port of mqtt server
         - -u
         - secret # username
-        - -P
-        -  mega_secret # password
         - -t
         - /golang/pub # target topic to subscribe to
         - --disable-bar # disable interactive bar
