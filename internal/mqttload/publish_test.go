@@ -3,7 +3,6 @@ package mqttload
 import (
 	"context"
 	"errors"
-	"io"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -187,7 +186,7 @@ func TestRunPublish_TopicQoSAndSuffix(t *testing.T) {
 		InFlight: 1, AckTimeout: time.Second, ConnectConcurrency: clientCount,
 	}
 
-	if err := RunPublish(context.Background(), connect, discardLogger(), options, io.Discard); err != nil {
+	if err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients)); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -253,7 +252,7 @@ func TestRunPublish_CtxCancelStopsEarlyAndDrains(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- RunPublish(ctx, connect, discardLogger(), options, io.Discard)
+		done <- RunPublish(ctx, connect, discardLogger(), options, NewPublishProgress(options.Clients))
 	}()
 
 	waitFor(t, time.Second, func() bool { return len(client.publishCalls()) >= 3 })
@@ -295,7 +294,7 @@ func TestRunPublish_ExitCode(t *testing.T) {
 		options.Count = 5
 		options.AckTimeout = time.Second
 
-		if err := RunPublish(context.Background(), connect, discardLogger(), options, io.Discard); err != nil {
+		if err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients)); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 	})
@@ -310,7 +309,7 @@ func TestRunPublish_ExitCode(t *testing.T) {
 		options.Count = 3
 		options.AckTimeout = time.Second
 
-		err := RunPublish(context.Background(), connect, discardLogger(), options, io.Discard)
+		err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients))
 		if err == nil {
 			t.Fatal("expected an error, got none")
 		}
@@ -329,7 +328,7 @@ func TestRunPublish_ExitCode(t *testing.T) {
 		options.Count = 2
 		options.AckTimeout = 10 * time.Millisecond
 
-		err := RunPublish(context.Background(), connect, discardLogger(), options, io.Discard)
+		err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients))
 		if err == nil {
 			t.Fatal("expected an error, got none")
 		}
@@ -350,7 +349,7 @@ func TestRunPublish_ConnectFailureReturnsError(t *testing.T) {
 		Clients: 1, InFlight: 1, AckTimeout: time.Second, ConnectConcurrency: 1,
 	}
 
-	err := RunPublish(context.Background(), connect, discardLogger(), options, io.Discard)
+	err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients))
 	if !errors.Is(err, wantErr) {
 		t.Errorf("expected error to wrap %v, got %v", wantErr, err)
 	}
@@ -374,7 +373,7 @@ func TestRunPublish_CancelDuringConnectIsNotAnError(t *testing.T) {
 		Clients: 1, InFlight: 1, AckTimeout: time.Second, ConnectConcurrency: 1,
 	}
 
-	if err := RunPublish(ctx, connect, discardLogger(), options, io.Discard); err != nil {
+	if err := RunPublish(ctx, connect, discardLogger(), options, NewPublishProgress(options.Clients)); err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/pablitovicente/mqtt-load-generator/internal/display"
 	"github.com/pablitovicente/mqtt-load-generator/internal/mqttload"
 )
 
@@ -37,9 +38,9 @@ func newDumpCommand(connection *Connection, connect connectFunc) *cobra.Command 
 				return fmt.Errorf("connecting to broker: %w", err)
 			}
 
-			dumpOptions := mqttload.DumpOptions{ShowTopic: dump.ShowTopic, JSON: dump.JSON}
+			printer := display.NewMessagePrinter(cmd.OutOrStdout(), logger, display.DumpOptions{ShowTopic: dump.ShowTopic, JSON: dump.JSON})
 
-			return mqttload.RunDump(cmd.Context(), client, logger, connection.Topic, byte(connection.QoS), dumpOptions, cmd.OutOrStdout())
+			return mqttload.RunDump(cmd.Context(), client, logger, connection.Topic, byte(connection.QoS), printer)
 		},
 
 		SilenceUsage: true,

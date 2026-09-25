@@ -576,6 +576,34 @@ func TestSubscribeReturnsErrorWhenConnectFails(t *testing.T) {
 	}
 }
 
+// TestSubscribeWaitsForDisplayBeforeReturning checks that by the time the command returns, the
+// display goroutine has already written its final summary line, in both --disable-bar and bar
+// mode: sub waits for it instead of racing it.
+func TestSubscribeWaitsForDisplayBeforeReturning(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"disable-bar mode", []string{"sub", "--disable-bar"}},
+		{"bar mode", []string{"sub"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			connector := &fakeConnector{}
+
+			output, err := runCommandWithConnector(t, alreadyCancelledContext(), connector, tt.args...)
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+
+			if !strings.Contains(output, "sub stopped") {
+				t.Errorf("expected the summary line to already be in the output when the command returns, got: %s", output)
+			}
+		})
+	}
+}
+
 // TestDumpConnectsWithParsedOptions checks that dump converts its parsed connection flags into
 // broker.Options and connects with them, using the default generated client ID. dump no longer
 // prints its config (see TestDefaults for pub).

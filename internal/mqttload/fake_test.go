@@ -125,6 +125,42 @@ func (token *pendingToken) Error() error {
 	return token.err
 }
 
+// fakePrintCall records one Print call made through a fakePrinter.
+type fakePrintCall struct {
+	topic   string
+	payload []byte
+}
+
+// fakePrinter is a MessagePrinter that records what it was called with, for RunDump tests that
+// don't care about formatting (see the display package for that). With no err function set,
+// every Print succeeds.
+type fakePrinter struct {
+	mutex sync.Mutex
+
+	calls []fakePrintCall
+	err   func(topic string, payload []byte) error
+}
+
+func (printer *fakePrinter) Print(topic string, payload []byte) error {
+	printer.mutex.Lock()
+	printer.calls = append(printer.calls, fakePrintCall{topic: topic, payload: append([]byte(nil), payload...)})
+	errFunc := printer.err
+	printer.mutex.Unlock()
+
+	if errFunc != nil {
+		return errFunc(topic, payload)
+	}
+	return nil
+}
+
+// printCalls returns a copy of the Print calls made so far.
+func (printer *fakePrinter) printCalls() []fakePrintCall {
+	printer.mutex.Lock()
+	defer printer.mutex.Unlock()
+
+	return append([]fakePrintCall(nil), printer.calls...)
+}
+
 // fakePublishCall records one Publish call made through a fakePublisher.
 type fakePublishCall struct {
 	topic   string

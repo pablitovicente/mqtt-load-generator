@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/pablitovicente/mqtt-load-generator/internal/display"
 	"github.com/pablitovicente/mqtt-load-generator/internal/mqttload"
 )
 
@@ -39,12 +40,26 @@ func newSubscribeCommand(connection *Connection, connect connectFunc) *cobra.Com
 				return fmt.Errorf("connecting to broker: %w", err)
 			}
 
-			subscribeOptions := mqttload.SubscribeOptions{
-				DisableBar: subscribe.DisableBar,
-				ResetAfter: time.Duration(subscribe.ResetAfter * float64(time.Second)),
-			}
+			progress := mqttload.NewSubscribeProgress()
+			resetAfter := time.Duration(subscribe.ResetAfter * float64(time.Second))
 
-			return mqttload.RunSubscribe(cmd.Context(), client, logger, connection.Topic, byte(connection.QoS), subscribeOptions, cmd.ErrOrStderr())
+			// display runs on its own goroutine, reading progress on its own timer. We wait for
+			// it to finish its final output before returning, so nothing prints after the
+			// command has already returned.
+			displayStopped := make(chan struct{})
+			go func() {
+				defer close(displayStopped)
+				if subscribe.DisableBar {
+					display.RunSubscribeLog(progress, logger, resetAfter)
+				} else {
+					display.RunSubscribeBar(progress, logger, cmd.ErrOrStderr())
+				}
+			}()
+
+			err = mqttload.RunSubscribe(cmd.Context(), client, logger, connection.Topic, byte(connection.QoS), progress)
+			<-displayStopped
+
+			return err
 		},
 
 		SilenceUsage: true,

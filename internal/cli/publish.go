@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/pablitovicente/mqtt-load-generator/internal/display"
 	"github.com/pablitovicente/mqtt-load-generator/internal/mqttload"
 )
 
@@ -69,7 +70,22 @@ func newPublishRunFunction(connection *Connection, publish *Publish, connect con
 			ConnectConcurrency:   publish.ConnectConcurrency,
 		}
 
-		return mqttload.RunPublish(cmd.Context(), connectClient, logger, publishOptions, cmd.ErrOrStderr())
+		progress := mqttload.NewPublishProgress(publish.Clients)
+		totalMessages := int64(publish.Clients) * int64(publish.Count)
+
+		// display runs on its own goroutine, reading progress on its own timer. We wait for it
+		// to finish its final output before returning, so nothing prints after the command has
+		// already returned.
+		displayStopped := make(chan struct{})
+		go func() {
+			defer close(displayStopped)
+			display.RunPublishProgress(progress, totalMessages, logger, cmd.ErrOrStderr())
+		}()
+
+		err := mqttload.RunPublish(cmd.Context(), connectClient, logger, publishOptions, progress)
+		<-displayStopped
+
+		return err
 	}
 }
 
@@ -88,5 +104,5 @@ func registerPublishFlags(flags *pflag.FlagSet, publish *Publish) {
 	flags.BoolVar(&publish.Benchmark, "benchmark", false, "Use a benchmark payload: JSON with a timestamp and padding, for latency measurement")
 	flags.IntVar(&publish.InFlight, "inflight", 1, "Maximum number of unacknowledged publishes at once per client (1..65535)")
 	flags.DurationVar(&publish.AckTimeout, "ack-timeout", 30*time.Second, "How long to wait for a publish to be acknowledged before it counts as timed out")
-	flags.IntVar(&publish.ConnectConcurrency, "connect-concurrency", 16, "Maximum number of clients connecting at the same time")
+	flags.IntVar(&publish.ConnectConcurrency, "connect-concurrency", 16, "Maximum number of clients connecting at the same time. At most --clients are used.")
 }

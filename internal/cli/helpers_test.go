@@ -149,11 +149,32 @@ func runCommandWithConnector(t *testing.T, ctx context.Context, connector *fakeC
 
 	rootCommand := newRootCommand(connector.connect)
 
-	var output bytes.Buffer
-	rootCommand.SetOut(&output)
-	rootCommand.SetErr(&output)
+	// A plain bytes.Buffer isn't safe here: pub and sub both run a display goroutine that
+	// writes to this same output while the command's own goroutine logs to it too.
+	output := &syncBuffer{}
+	rootCommand.SetOut(output)
+	rootCommand.SetErr(output)
 	rootCommand.SetArgs(args)
 
 	err := rootCommand.ExecuteContext(ctx)
 	return output.String(), err
+}
+
+// syncBuffer is a bytes.Buffer safe for concurrent use: pub and sub write to it from both the
+// command's own goroutine (logging) and a display goroutine (bars and log lines) at once.
+type syncBuffer struct {
+	mutex  sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	return b.buffer.String()
 }

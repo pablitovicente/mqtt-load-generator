@@ -3,14 +3,14 @@ package mqttload
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"math/rand/v2"
 	"sync"
 	"time"
 
+	"golang.org/x/sync/semaphore"
+
 	"github.com/pablitovicente/mqtt-load-generator/internal/broker"
-	"github.com/schollz/progressbar/v3"
 )
 
 // PublishOptions holds the settings for the publish loop: a plain copy of the relevant fields
@@ -33,16 +33,19 @@ type PublishOptions struct {
 }
 
 // RunPublish connects Options.Clients clients (through connect, at most ConnectConcurrency at a
-// time), then has every client publish Options.Count messages. It shows progress on output, like
-// v1's "Publishing N messages" bar, and logs a summary through logger once every client stops.
+// time), then has every client publish Options.Count messages, reporting what happens on
+// progress as it goes. RunPublish returns an error when connecting fails, or when the run ends
+// with any failed or timed-out publish.
 //
 // Ctrl-C (ctx cancelled) stops sending new messages, waits for whatever was already in flight
 // (bounded by AckTimeout), disconnects, and reports what happened -- that on its own is not an
-// error. RunPublish returns an error when connecting fails, or when the run ends with any failed
-// or timed-out publish.
-func RunPublish(ctx context.Context, connect connectClientFunc, logger *slog.Logger, options PublishOptions, output io.Writer) error {
-	clients, err := connectClients(ctx, connect, options.Clients, options.ConnectConcurrency, output)
+// error.
+func RunPublish(ctx context.Context, connect connectClientFunc, logger *slog.Logger, options PublishOptions, progress *PublishProgress) error {
+	clients, err := connectClients(ctx, connect, options.Clients, options.ConnectConcurrency, progress)
 	if err != nil {
+		progress.finishConnecting(false)
+		progress.finish()
+
 		// Ctrl-C while connecting is a normal stop, the same as Ctrl-C while publishing.
 		if ctx.Err() != nil {
 			logger.Info("pub stopped before every client connected")
@@ -53,23 +56,7 @@ func RunPublish(ctx context.Context, connect connectClientFunc, logger *slog.Log
 	}
 
 	logger.Info("connected", "clients", len(clients))
-
-	counters := make([]*publishCounters, options.Clients)
-	for i := range counters {
-		counters[i] = &publishCounters{}
-	}
-
-	startedAt := time.Now()
-
-	// barDone tells the progress bar goroutine to stop; barStopped confirms it actually has,
-	// including its final write to output, so nothing below (or a test reading output) races
-	// with it.
-	barDone := make(chan struct{})
-	barStopped := make(chan struct{})
-	go func() {
-		defer close(barStopped)
-		runPublishProgressBar(barDone, output, counters, int64(options.Clients)*int64(options.Count), progressBarUpdateInterval)
-	}()
+	progress.finishConnecting(true)
 
 	var waitGroup sync.WaitGroup
 	for i, client := range clients {
@@ -77,29 +64,13 @@ func RunPublish(ctx context.Context, connect connectClientFunc, logger *slog.Log
 		go func(clientNumber int, client Publisher, counters *publishCounters) {
 			defer waitGroup.Done()
 			runClientPublish(ctx, client, clientNumber, options, counters)
-		}(i+1, client, counters[i])
+		}(i+1, client, progress.counterFor(i))
 	}
 	waitGroup.Wait()
-	close(barDone)
-	<-barStopped
 
-	elapsed := time.Since(startedAt)
-	summary := sumPublishCounters(counters)
+	progress.finish()
 
-	var messagesPerSecond float64
-	if elapsed > 0 {
-		messagesPerSecond = float64(summary.Published) / elapsed.Seconds()
-	}
-
-	logger.Info("pub stopped",
-		"published", summary.Published,
-		"acked", summary.Acked,
-		"failed", summary.Failed,
-		"timedOut", summary.TimedOut,
-		"elapsedSeconds", elapsed.Seconds(),
-		"messagesPerSecond", messagesPerSecond,
-	)
-
+	summary := progress.Snapshot()
 	if summary.Failed+summary.TimedOut > 0 {
 		return fmt.Errorf("pub: %d published, %d acked, %d failed, %d timed out",
 			summary.Published, summary.Acked, summary.Failed, summary.TimedOut)
@@ -132,7 +103,7 @@ func runClientPublish(ctx context.Context, client Publisher, clientNumber int, o
 		pacer:           newPacer(options.Schedule, options.IntervalMilliseconds, random),
 		options:         options,
 		counters:        counters,
-		inflightSlots:   make(chan struct{}, options.InFlight),
+		inflight:        semaphore.NewWeighted(int64(options.InFlight)),
 	}
 
 	publisher.sendMessages(ctx)
@@ -153,11 +124,11 @@ type publishingClient struct {
 	options         PublishOptions
 	counters        *publishCounters
 
-	// inflightSlots is the in-flight window: one code path for every --inflight value,
-	// including 1. Sending into it is "take a slot" (blocks once InFlight publishes are
-	// outstanding); waitForResult releases the slot once the broker has answered, or
-	// AckTimeout has passed.
-	inflightSlots chan struct{}
+	// inflight is the in-flight window: one code path for every --inflight value, including
+	// 1. Acquire is "take a slot" (blocks once InFlight publishes are outstanding, and stops
+	// blocking with an error once ctx is cancelled); waitForResult releases the slot once the
+	// broker has answered, or AckTimeout has passed.
+	inflight *semaphore.Weighted
 
 	// outstandingPublishes counts the waitForResult goroutines still running, so the client
 	// can wait for all of them before disconnecting.
@@ -168,7 +139,7 @@ type publishingClient struct {
 // early when ctx is cancelled.
 func (publisher *publishingClient) sendMessages(ctx context.Context) {
 	for i := 0; i < publisher.options.Count; i++ {
-		if !takeSlot(ctx, publisher.inflightSlots) {
+		if err := publisher.inflight.Acquire(ctx, 1); err != nil {
 			return
 		}
 
@@ -188,7 +159,7 @@ func (publisher *publishingClient) sendMessages(ctx context.Context) {
 // frees its in-flight slot.
 func (publisher *publishingClient) waitForResult(token broker.Token) {
 	defer publisher.outstandingPublishes.Done()
-	defer func() { <-publisher.inflightSlots }()
+	defer publisher.inflight.Release(1)
 
 	switch {
 	case !token.WaitTimeout(publisher.options.AckTimeout):
@@ -197,43 +168,5 @@ func (publisher *publishingClient) waitForResult(token broker.Token) {
 		publisher.counters.failed.Add(1)
 	default:
 		publisher.counters.acked.Add(1)
-	}
-}
-
-// runPublishProgressBar shows "Publishing N messages" on output, like v1, advancing by however
-// many messages were published since the last sample, until done is closed.
-func runPublishProgressBar(done <-chan struct{}, output io.Writer, counters []*publishCounters, total int64, interval time.Duration) {
-	bar := progressbar.NewOptions64(total,
-		progressbar.OptionSetDescription(fmt.Sprintf("Publishing %d messages", total)),
-		progressbar.OptionSetWriter(output),
-		progressbar.OptionSetWidth(10),
-		progressbar.OptionThrottle(65*time.Millisecond),
-		progressbar.OptionShowCount(),
-		progressbar.OptionShowIts(),
-		progressbar.OptionOnCompletion(func() { _, _ = fmt.Fprint(output, "\n") }),
-		progressbar.OptionSpinnerType(14),
-		progressbar.OptionFullWidth(),
-		progressbar.OptionSetRenderBlankState(true),
-		progressbar.OptionShowElapsedTimeOnFinish(),
-	)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	var previous int64
-	sample := func() {
-		current := sumPublishCounters(counters).Published
-		_ = bar.Add64(current - previous)
-		previous = current
-	}
-
-	for {
-		select {
-		case <-done:
-			sample()
-			return
-		case <-ticker.C:
-			sample()
-		}
 	}
 }

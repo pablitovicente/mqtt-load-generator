@@ -129,3 +129,20 @@ func TestPublishExitsNonZeroOnPublishFailure(t *testing.T) {
 		t.Fatal("expected an error, got none")
 	}
 }
+
+// TestPublishWaitsForDisplayBeforeReturning checks that by the time the command returns, the
+// display goroutine has already written its final summary line: pub waits for it instead of
+// racing it (see the barStopped-style channel in newPublishRunFunction).
+func TestPublishWaitsForDisplayBeforeReturning(t *testing.T) {
+	connector := &fakeConnector{}
+
+	output, err := runCommandWithConnector(t, context.Background(), connector,
+		"pub", "-c", "3", "-i", "0", "-n", "2")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if !strings.Contains(output, "pub stopped") {
+		t.Errorf("expected the summary line to already be in the output when the command returns, got: %s", output)
+	}
+}

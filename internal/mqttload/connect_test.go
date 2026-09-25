@@ -3,7 +3,6 @@ package mqttload
 import (
 	"context"
 	"errors"
-	"io"
 	"sync"
 	"testing"
 	"time"
@@ -51,7 +50,7 @@ func TestConnectClients_NeverExceedsConcurrency(t *testing.T) {
 	var clients []Publisher
 	var err error
 	go func() {
-		clients, err = connectClients(context.Background(), connect, clientCount, concurrency, io.Discard)
+		clients, err = connectClients(context.Background(), connect, clientCount, concurrency, NewPublishProgress(clientCount))
 		close(done)
 	}()
 
@@ -116,7 +115,7 @@ func TestConnectClients_FailedConnectDisconnectsAlreadyConnected(t *testing.T) {
 
 	// connectConcurrency 1 makes this deterministic: clients connect in order 1, 2, 3 (fails),
 	// and 4 is never attempted.
-	clients, err := connectClients(context.Background(), connect, clientCount, 1, io.Discard)
+	clients, err := connectClients(context.Background(), connect, clientCount, 1, NewPublishProgress(clientCount))
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected error to be %v, got %v", wantErr, err)
@@ -158,7 +157,7 @@ func TestConnectClients_CtxCancelDuringConnect(t *testing.T) {
 	var clients []Publisher
 	var err error
 	go func() {
-		clients, err = connectClients(ctx, connect, clientCount, clientCount, io.Discard)
+		clients, err = connectClients(ctx, connect, clientCount, clientCount, NewPublishProgress(clientCount))
 		close(done)
 	}()
 
