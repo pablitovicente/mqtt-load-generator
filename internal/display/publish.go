@@ -80,7 +80,7 @@ func runConnectBar(progress publishProgressSource, output io.Writer, interval ti
 			snapshot := progress.Snapshot()
 			_ = bar.Add64(int64(snapshot.ClientsConnected) - previous)
 			endBarLineIfUnfinished(bar, output)
-			return !snapshot.PublishStartedAt.IsZero()
+			return !snapshot.ConnectFailed
 
 		case <-ticker.C:
 			current := int64(progress.Snapshot().ClientsConnected)

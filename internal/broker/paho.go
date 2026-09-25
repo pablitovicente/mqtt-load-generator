@@ -4,7 +4,9 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
@@ -53,6 +55,13 @@ func Dial(ctx context.Context, options Options, clientID string, logger *slog.Lo
 	select {
 	case <-connectToken.Done():
 		if err := connectToken.Error(); err != nil {
+			// A broker that expects TLS closes a plain connection straight away, which paho
+			// reports as a bare EOF. Say what that usually means.
+			if tlsConfig == nil && errors.Is(err, io.EOF) {
+				return nil, fmt.Errorf("connecting to %s: the broker closed the connection right away (%w). "+
+					"If this port expects TLS, add --mqtts (with --ca or --insecure for a self-signed certificate)", brokerURL(options), err)
+			}
+
 			return nil, fmt.Errorf("connecting to %s: %w", brokerURL(options), err)
 		}
 	case <-ctx.Done():

@@ -49,6 +49,9 @@ func TestPublishProgress_ConnectAndFinishLifecycle(t *testing.T) {
 	if progress.Snapshot().PublishStartedAt.IsZero() {
 		t.Error("expected PublishStartedAt to be set")
 	}
+	if progress.Snapshot().ConnectFailed {
+		t.Error("expected ConnectFailed to be false when publishing started")
+	}
 
 	progress.finish()
 
@@ -68,6 +71,9 @@ func TestPublishProgress_FinishConnectingFalseLeavesPublishStartedAtZero(t *test
 
 	if !progress.Snapshot().PublishStartedAt.IsZero() {
 		t.Error("expected PublishStartedAt to stay zero when connecting did not start publishing")
+	}
+	if !progress.Snapshot().ConnectFailed {
+		t.Error("expected ConnectFailed to be true")
 	}
 
 	select {

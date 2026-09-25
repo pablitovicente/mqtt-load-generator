@@ -63,7 +63,7 @@ func TestRunPublishProgress_NoSummaryWhenConnectFails(t *testing.T) {
 	progress := newFakePublishProgress()
 	logger, logs := captureLogger()
 
-	progress.set(mqttload.PublishSnapshot{ClientsConnected: 1, ClientsTotal: 3}) // PublishStartedAt stays zero
+	progress.set(mqttload.PublishSnapshot{ClientsConnected: 1, ClientsTotal: 3, ConnectFailed: true})
 
 	done := make(chan struct{})
 	go func() {
@@ -90,7 +90,7 @@ func TestRunPublishProgress_EndsConnectBarLineWhenStoppedEarly(t *testing.T) {
 	progress := newFakePublishProgress()
 	output := &syncBuffer{}
 
-	progress.set(mqttload.PublishSnapshot{ClientsConnected: 1, ClientsTotal: 5}) // never reaches 5
+	progress.set(mqttload.PublishSnapshot{ClientsConnected: 1, ClientsTotal: 5, ConnectFailed: true}) // never reaches 5
 
 	done := make(chan struct{})
 	go func() {

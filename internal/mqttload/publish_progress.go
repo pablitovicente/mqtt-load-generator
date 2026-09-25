@@ -15,6 +15,10 @@ type PublishSnapshot struct {
 	Failed    int64
 	TimedOut  int64
 
+	// ConnectFailed is true when connecting failed or was cancelled, so publishing never
+	// started. Only meaningful once ConnectFinished has closed.
+	ConnectFailed bool
+
 	// PublishStartedAt is zero until publishing actually starts. It stays zero when
 	// connecting fails or is cancelled: the run never gets to the publishing phase.
 	PublishStartedAt time.Time
@@ -32,6 +36,7 @@ type PublishProgress struct {
 
 	clientsConnected atomic.Int64
 	publishStartedAt atomicTime
+	connectFailed    atomic.Bool
 	finishedAt       atomicTime
 
 	// connectFinished closes once every client has connected, or connecting has failed or
@@ -85,6 +90,8 @@ func (progress *PublishProgress) counterFor(clientIndex int) *publishCounters {
 func (progress *PublishProgress) finishConnecting(started bool) {
 	if started {
 		progress.publishStartedAt.set(time.Now())
+	} else {
+		progress.connectFailed.Store(true)
 	}
 	close(progress.connectFinished)
 }
@@ -106,6 +113,7 @@ func (progress *PublishProgress) Snapshot() PublishSnapshot {
 		Acked:            summary.Acked,
 		Failed:           summary.Failed,
 		TimedOut:         summary.TimedOut,
+		ConnectFailed:    progress.connectFailed.Load(),
 		PublishStartedAt: progress.publishStartedAt.load(),
 		FinishedAt:       progress.finishedAt.load(),
 	}
