@@ -44,11 +44,11 @@ func TestConnectionValidate(t *testing.T) {
 			connection.TLS.Cert = "cert.pem"
 			connection.TLS.Key = "key.pem"
 		}, true},
-		{"tls: cert and key without ca, with mqtts is still an error", func(connection *Connection) {
+		{"tls: cert and key without ca, with mqtts is valid", func(connection *Connection) {
 			connection.TLS.Cert = "cert.pem"
 			connection.TLS.Key = "key.pem"
 			connection.MQTTS = true
-		}, true},
+		}, false},
 		{"tls: all three set is valid", func(connection *Connection) {
 			connection.TLS.CA = "ca.pem"
 			connection.TLS.Cert = "cert.pem"

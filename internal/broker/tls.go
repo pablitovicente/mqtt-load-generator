@@ -13,13 +13,6 @@ func usesTLSFiles(options Options) bool {
 	return options.TLSCertFile != "" && options.TLSKeyFile != "" && options.TLSCAFile != ""
 }
 
-// usesCAOnly reports whether options carries a CA file with no client certificate: --ca given
-// on its own, with --mqtts. cli's Connection.Validate only allows this combination together
-// with --mqtts, or as part of the full mTLS set handled by usesTLSFiles.
-func usesCAOnly(options Options) bool {
-	return options.TLSCAFile != "" && options.TLSCertFile == "" && options.TLSKeyFile == ""
-}
-
 // brokerURL builds the broker address paho connects to: tls:// when there is a full set of
 // mTLS files, or when --mqtts was given, tcp:// otherwise. This matches v1's Connect().
 func brokerURL(options Options) string {
@@ -51,40 +44,34 @@ func loadCACertificatePool(caFile string) (*x509.CertPool, error) {
 }
 
 // buildTLSConfig builds the *tls.Config to use for the connection, or nil for a plain
-// connection. With a full set of mTLS files it loads the client certificate and key, and
-// checks the broker's certificate against the CA file. With --ca on its own it checks the
-// broker's certificate against that CA file too, but without presenting a client certificate.
-// With only --mqtts it returns a TLS config with no client certificate, checked against the
-// system's trusted CAs.
+// connection. TLS is on with --mqtts, or with all three of --ca, --cert and --key (as in 1.x).
+// Then:
+//   - --ca: check the broker's certificate against this CA file instead of the system's
+//     trusted CAs.
+//   - --cert and --key: present this client certificate (mutual TLS).
+//   - --insecure: skip checking the broker's certificate.
 func buildTLSConfig(options Options) (*tls.Config, error) {
-	if usesCAOnly(options) {
+	if !options.MQTTS && !usesTLSFiles(options) {
+		return nil, nil
+	}
+
+	config := &tls.Config{InsecureSkipVerify: options.Insecure}
+
+	if options.TLSCAFile != "" {
 		pool, err := loadCACertificatePool(options.TLSCAFile)
 		if err != nil {
 			return nil, err
 		}
-		return &tls.Config{RootCAs: pool, InsecureSkipVerify: options.Insecure}, nil
+		config.RootCAs = pool
 	}
 
-	if !usesTLSFiles(options) {
-		if options.MQTTS {
-			return &tls.Config{InsecureSkipVerify: options.Insecure}, nil
+	if options.TLSCertFile != "" {
+		certificate, err := tls.LoadX509KeyPair(options.TLSCertFile, options.TLSKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading TLS certificate and key: %w", err)
 		}
-		return nil, nil
+		config.Certificates = []tls.Certificate{certificate}
 	}
 
-	certificate, err := tls.LoadX509KeyPair(options.TLSCertFile, options.TLSKeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("loading TLS certificate and key: %w", err)
-	}
-
-	pool, err := loadCACertificatePool(options.TLSCAFile)
-	if err != nil {
-		return nil, err
-	}
-
-	return &tls.Config{
-		Certificates:       []tls.Certificate{certificate},
-		RootCAs:            pool,
-		InsecureSkipVerify: options.Insecure,
-	}, nil
+	return config, nil
 }

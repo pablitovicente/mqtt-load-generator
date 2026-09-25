@@ -167,23 +167,26 @@ export MQTT_PASSWORD=mega_secret
 ./bin/mqtt-load-generator sub -h broker -t /golang/pub
 ```
 
-`--cert` and `--key` must be given together or not at all.
+TLS is on with `--mqtts`, or when all three of `--ca`, `--cert` and `--key` are given (as in
+1.x). The TLS flags then change how the broker is checked and whether the client presents a
+certificate:
 
-`--ca` can be given on its own with `--mqtts`: the connection checks the broker's certificate
-against that CA file instead of the system's trusted CAs, without presenting a client
-certificate. This is the safer alternative to `--insecure` for a broker with a self-signed
-certificate: the broker's certificate is still checked, just against your own CA instead of
-the system's.
+| Flags | Broker's certificate checked against | Client certificate |
+|---|---|---|
+| `--mqtts` | the system's trusted CAs | none |
+| `--mqtts --ca ca.pem` | `ca.pem` | none |
+| `--mqtts --cert c.pem --key k.pem` | the system's trusted CAs | `c.pem` (mutual TLS) |
+| `--ca ca.pem --cert c.pem --key k.pem` | `ca.pem` | `c.pem` (mutual TLS) |
+
+`--cert` and `--key` go together. `--ca` alone, or `--cert` and `--key` without `--ca`, need
+`--mqtts`.
+
+For a broker with a self-signed certificate, `--mqtts --ca ca.pem` keeps the check and is the
+safer choice over `--insecure`:
 
 ```bash
 ./bin/mqtt-load-generator sub -h broker --mqtts --ca ca-cert.pem -t /golang/pub
 ```
-
-`--ca` on its own without `--mqtts` (and without `--cert`/`--key`) is an error: there would be
-no TLS connection to check the CA against.
-
-`--cert`, `--ca` and `--key` together is mutual TLS (mTLS): the client also presents its own
-certificate, on top of checking the broker's.
 
 `--insecure` turns off every check of the broker's TLS certificate, including the host name.
 Anyone between you and the broker can then pose as the broker and read the password. Use it

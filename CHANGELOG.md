@@ -26,9 +26,10 @@ and `dump`. The code was rewritten and now has tests. 1.x releases remain availa
   `MQTT_CA`, `MQTT_CERT`, `MQTT_KEY`. The 1.x flags `-u` and `-P` still work, and take
   priority over the environment variables when both are given. The TLS file flags need two
   dashes now: `--ca`, `--cert`, `--key`.
-- `--ca` on its own, with `--mqtts`: checks the broker's certificate against that CA file
-  instead of the system's trusted CAs, without a client certificate. The safer alternative to
-  `--insecure` for a broker with a self-signed certificate.
+- More TLS combinations with `--mqtts`: `--ca` on its own checks the broker's certificate
+  against that CA file (the safer alternative to `--insecure` for self-signed brokers), and
+  `--cert` with `--key` presents a client certificate while checking the broker against the
+  system's trusted CAs. 1.x only supported all three files together.
 
 ### Bugs fixed
 

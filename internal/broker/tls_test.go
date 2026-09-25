@@ -110,6 +110,25 @@ func TestBuildTLSConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("mqtts with cert and key but no CA presents the client certificate and uses the system's CAs", func(t *testing.T) {
+		config, err := buildTLSConfig(Options{
+			Host:        "localhost",
+			Port:        8883,
+			MQTTS:       true,
+			TLSCertFile: filepath.Join(certsDir, "client-cert.pem"),
+			TLSKeyFile:  filepath.Join(certsDir, "client-key.pem"),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(config.Certificates) != 1 {
+			t.Errorf("expected 1 client certificate, got %d", len(config.Certificates))
+		}
+		if config.RootCAs != nil {
+			t.Error("expected RootCAs to be nil, so the system's trusted CAs are used")
+		}
+	})
+
 	t.Run("valid mTLS file set builds a usable config", func(t *testing.T) {
 		options := Options{
 			Host:        "localhost",

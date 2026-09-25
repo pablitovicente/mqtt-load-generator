@@ -86,19 +86,12 @@ func (connection *Connection) Validate() error {
 		return fmt.Errorf("--cert and --key must be given together or not at all")
 	}
 
-	// --ca on its own tells the TLS connection which CA to check the broker's certificate
-	// against. That only means something with --mqtts (or with --cert/--key too, which makes
-	// this full mTLS, handled below); without either, there is no TLS connection to apply it
-	// to and turning one on silently would be a surprise.
-	if caGiven && !certGiven && !connection.MQTTS {
-		return fmt.Errorf("--ca needs --mqtts, or --cert and --key for mTLS")
-	}
-
-	// --cert and --key together need --ca too, for full mTLS. Without it, the client
-	// certificate would be loaded but never presented: only --mqtts or the full set of three
-	// files turns on TLS, and --mqtts alone doesn't send a client certificate.
-	if certGiven && keyGiven && !caGiven {
-		return fmt.Errorf("--cert and --key need --ca too, for mTLS")
+	// TLS is on with --mqtts, or with all three files (as in 1.x). --ca alone, or --cert and
+	// --key without --ca, only change how a TLS connection is made, so they need --mqtts:
+	// turning TLS on silently would be a surprise.
+	allThreeFiles := caGiven && certGiven
+	if (caGiven || certGiven) && !allThreeFiles && !connection.MQTTS {
+		return fmt.Errorf("--ca on its own, or --cert and --key without --ca, need --mqtts")
 	}
 
 	// Without TLS there is no certificate to skip checking, so --insecure would do nothing and
