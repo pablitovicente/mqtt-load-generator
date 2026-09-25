@@ -167,8 +167,23 @@ export MQTT_PASSWORD=mega_secret
 ./bin/mqtt-load-generator sub -h broker -t /golang/pub
 ```
 
-`--cert`, `--ca` and `--key` must be given together or not at all. Giving only one or two of
-them is an error.
+`--cert` and `--key` must be given together or not at all.
+
+`--ca` can be given on its own with `--mqtts`: the connection checks the broker's certificate
+against that CA file instead of the system's trusted CAs, without presenting a client
+certificate. This is the safer alternative to `--insecure` for a broker with a self-signed
+certificate: the broker's certificate is still checked, just against your own CA instead of
+the system's.
+
+```bash
+./bin/mqtt-load-generator sub -h broker --mqtts --ca ca-cert.pem -t /golang/pub
+```
+
+`--ca` on its own without `--mqtts` (and without `--cert`/`--key`) is an error: there would be
+no TLS connection to check the CA against.
+
+`--cert`, `--ca` and `--key` together is mutual TLS (mTLS): the client also presents its own
+certificate, on top of checking the broker's.
 
 `--insecure` turns off every check of the broker's TLS certificate, including the host name.
 Anyone between you and the broker can then pose as the broker and read the password. Use it

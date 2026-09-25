@@ -702,21 +702,31 @@ func TestOrderedFlag(t *testing.T) {
 // TestSubscribeAndDumpReturnWhenSubscribeFails checks that a failed subscribe (for example a
 // topic the broker rejects) ends sub and dump with an error. sub used to hang forever here,
 // waiting for a display that was never told the run had ended, and ignored Ctrl-C.
+//
+// For sub, it also checks that the misleading "sub stopped" summary is not printed: the
+// subscribe never succeeded, so sub never actually ran.
 func TestSubscribeAndDumpReturnWhenSubscribeFails(t *testing.T) {
 	for _, args := range [][]string{{"sub"}, {"sub", "--disable-bar"}, {"dump"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			connector := &fakeConnector{subscribeError: errors.New("invalid topic")}
 
-			done := make(chan error, 1)
+			type result struct {
+				output string
+				err    error
+			}
+			done := make(chan result, 1)
 			go func() {
-				_, err := runCommandWithConnector(t, context.Background(), connector, args...)
-				done <- err
+				output, err := runCommandWithConnector(t, context.Background(), connector, args...)
+				done <- result{output: output, err: err}
 			}()
 
 			select {
-			case err := <-done:
-				if err == nil || !strings.Contains(err.Error(), "invalid topic") {
-					t.Fatalf("expected the subscribe error, got %v", err)
+			case got := <-done:
+				if got.err == nil || !strings.Contains(got.err.Error(), "invalid topic") {
+					t.Fatalf("expected the subscribe error, got %v", got.err)
+				}
+				if args[0] == "sub" && strings.Contains(got.output, "sub stopped") {
+					t.Errorf("expected no \"sub stopped\" summary when the subscribe failed, got: %s", got.output)
 				}
 			case <-time.After(2 * time.Second):
 				t.Fatal("command did not return after the subscribe failed")

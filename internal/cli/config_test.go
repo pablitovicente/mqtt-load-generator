@@ -38,16 +38,25 @@ func TestConnectionValidate(t *testing.T) {
 		{"log level in upper case is valid", func(connection *Connection) { connection.LogLevel = "DEBUG" }, false},
 		{"log level empty", func(connection *Connection) { connection.LogLevel = "" }, true},
 		{"tls: only cert set", func(connection *Connection) { connection.TLS.Cert = "cert.pem" }, true},
-		{"tls: only ca set", func(connection *Connection) { connection.TLS.CA = "ca.pem" }, true},
+		{"tls: only ca set, no mqtts", func(connection *Connection) { connection.TLS.CA = "ca.pem" }, true},
 		{"tls: only key set", func(connection *Connection) { connection.TLS.Key = "key.pem" }, true},
-		{"tls: two of three set", func(connection *Connection) {
+		{"tls: cert and key without ca", func(connection *Connection) {
 			connection.TLS.Cert = "cert.pem"
 			connection.TLS.Key = "key.pem"
+		}, true},
+		{"tls: cert and key without ca, with mqtts is still an error", func(connection *Connection) {
+			connection.TLS.Cert = "cert.pem"
+			connection.TLS.Key = "key.pem"
+			connection.MQTTS = true
 		}, true},
 		{"tls: all three set is valid", func(connection *Connection) {
 			connection.TLS.CA = "ca.pem"
 			connection.TLS.Cert = "cert.pem"
 			connection.TLS.Key = "key.pem"
+		}, false},
+		{"tls: ca alone with mqtts is valid", func(connection *Connection) {
+			connection.TLS.CA = "ca.pem"
+			connection.MQTTS = true
 		}, false},
 		{"insecure without tls", func(connection *Connection) { connection.Insecure = true }, true},
 		{"insecure with mqtts is valid", func(connection *Connection) {
@@ -59,6 +68,11 @@ func TestConnectionValidate(t *testing.T) {
 			connection.TLS.CA = "ca.pem"
 			connection.TLS.Cert = "cert.pem"
 			connection.TLS.Key = "key.pem"
+		}, false},
+		{"insecure with ca alone and mqtts is valid", func(connection *Connection) {
+			connection.Insecure = true
+			connection.TLS.CA = "ca.pem"
+			connection.MQTTS = true
 		}, false},
 	}
 

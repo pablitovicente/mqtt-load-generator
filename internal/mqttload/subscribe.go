@@ -52,6 +52,7 @@ func RunSubscribe(
 		return err
 	}
 
+	progress.recordSubscribed()
 	logger.Info("subscribed", "topic", topic, "qos", qos)
 
 	<-ctx.Done()

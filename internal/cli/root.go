@@ -71,7 +71,9 @@ func registerConnectionFlags(flags *pflag.FlagSet, connection *Connection) {
 	flags.StringVarP(&connection.Password, "password", "P", "", "MQTT password (env MQTT_PASSWORD)")
 	flags.StringVarP(&connection.Topic, "topic", "t", "/load", "MQTT topic to publish or subscribe to")
 	flags.IntVarP(&connection.QoS, "qos", "q", 1, "MQTT QoS level used by all clients (0, 1 or 2)")
-	flags.StringVar(&connection.TLS.CA, "ca", "", "Path to TLS CA file (env MQTT_CA)")
+	flags.StringVar(&connection.TLS.CA, "ca", "", "Path to TLS CA file (env MQTT_CA). With --mqtts alone, "+
+		"checks the broker's certificate against this CA instead of the system's trusted CAs. With --cert "+
+		"and --key too, used for mutual TLS")
 	flags.StringVar(&connection.TLS.Cert, "cert", "", "Path to TLS certificate file (env MQTT_CERT)")
 	flags.StringVar(&connection.TLS.Key, "key", "", "Path to TLS private key file (env MQTT_KEY)")
 	flags.BoolVar(&connection.Insecure, "insecure", false,

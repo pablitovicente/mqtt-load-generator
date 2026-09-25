@@ -77,25 +77,33 @@ func (connection *Connection) Validate() error {
 		return fmt.Errorf("--log-level must be debug, info, warn or error (got %q)", connection.LogLevel)
 	}
 
-	// --cert, --ca and --key only make sense together: count how many were given and
-	// reject one or two of the three, since that silently drops to plain TCP otherwise.
-	tlsFieldsSet := 0
-	if connection.TLS.CA != "" {
-		tlsFieldsSet++
+	certGiven := connection.TLS.Cert != ""
+	keyGiven := connection.TLS.Key != ""
+	caGiven := connection.TLS.CA != ""
+
+	// A client certificate is useless without its private key and vice versa.
+	if certGiven != keyGiven {
+		return fmt.Errorf("--cert and --key must be given together or not at all")
 	}
-	if connection.TLS.Cert != "" {
-		tlsFieldsSet++
+
+	// --ca on its own tells the TLS connection which CA to check the broker's certificate
+	// against. That only means something with --mqtts (or with --cert/--key too, which makes
+	// this full mTLS, handled below); without either, there is no TLS connection to apply it
+	// to and turning one on silently would be a surprise.
+	if caGiven && !certGiven && !connection.MQTTS {
+		return fmt.Errorf("--ca needs --mqtts, or --cert and --key for mTLS")
 	}
-	if connection.TLS.Key != "" {
-		tlsFieldsSet++
-	}
-	if tlsFieldsSet == 1 || tlsFieldsSet == 2 {
-		return fmt.Errorf("--cert, --ca, and --key must all be set together or none at all")
+
+	// --cert and --key together need --ca too, for full mTLS. Without it, the client
+	// certificate would be loaded but never presented: only --mqtts or the full set of three
+	// files turns on TLS, and --mqtts alone doesn't send a client certificate.
+	if certGiven && keyGiven && !caGiven {
+		return fmt.Errorf("--cert and --key need --ca too, for mTLS")
 	}
 
 	// Without TLS there is no certificate to skip checking, so --insecure would do nothing and
 	// the connection (password included) would go over plain TCP.
-	if connection.Insecure && !connection.MQTTS && tlsFieldsSet == 0 {
+	if connection.Insecure && !connection.MQTTS && !certGiven && !caGiven {
 		return fmt.Errorf("--insecure only works with --mqtts or --cert/--ca/--key; without them the connection is plain TCP")
 	}
 

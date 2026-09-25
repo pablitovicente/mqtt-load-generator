@@ -12,6 +12,11 @@ type SubscribeSnapshot struct {
 
 	// LastMessageAt is zero until the first message arrives.
 	LastMessageAt time.Time
+
+	// SubscribedAt is zero until the broker acknowledges the subscribe request. It stays zero
+	// when the subscribe never succeeds, so display can tell a run that actually started from
+	// one that never got going.
+	SubscribedAt time.Time
 }
 
 // SubscribeProgress is what RunSubscribe reports as it works, and what display reads on its own
@@ -24,6 +29,7 @@ type SubscribeSnapshot struct {
 type SubscribeProgress struct {
 	received      atomic.Int64
 	lastMessageAt atomicTime
+	subscribedAt  atomicTime
 
 	// done closes once the run is over: ctx was cancelled and the client disconnected.
 	done chan struct{}
@@ -45,6 +51,11 @@ func (progress *SubscribeProgress) recordMessage() {
 	progress.lastMessageAt.set(time.Now())
 }
 
+// recordSubscribed records that the broker acknowledged the subscribe request, now.
+func (progress *SubscribeProgress) recordSubscribed() {
+	progress.subscribedAt.set(time.Now())
+}
+
 // finish marks the run as over.
 func (progress *SubscribeProgress) finish() {
 	close(progress.done)
@@ -55,5 +66,6 @@ func (progress *SubscribeProgress) Snapshot() SubscribeSnapshot {
 	return SubscribeSnapshot{
 		Received:      progress.received.Load(),
 		LastMessageAt: progress.lastMessageAt.load(),
+		SubscribedAt:  progress.subscribedAt.load(),
 	}
 }

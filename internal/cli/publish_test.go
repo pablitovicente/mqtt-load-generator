@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pablitovicente/mqtt-load-generator/internal/broker"
 )
@@ -144,5 +145,48 @@ func TestPublishWaitsForDisplayBeforeReturning(t *testing.T) {
 
 	if !strings.Contains(output, "pub stopped") {
 		t.Errorf("expected the summary line to already be in the output when the command returns, got: %s", output)
+	}
+}
+
+// TestPublishLogsStoppingMessageOnFirstCancel checks that cancelling pub's context while a
+// publish is still in flight logs the "stopping" line once, naming the real --ack-timeout
+// value, instead of leaving the run looking frozen until the wait is over.
+func TestPublishLogsStoppingMessageOnFirstCancel(t *testing.T) {
+	connector := &fakeConnector{publishDelay: 300 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	type result struct {
+		output string
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		output, err := runCommandWithConnector(t, ctx, connector,
+			"pub", "-c", "100", "-i", "0", "--ack-timeout", "2s")
+		done <- result{output: output, err: err}
+	}()
+
+	// Wait for the first publish to actually be in flight before cancelling, instead of
+	// guessing a sleep long enough for the run to have started.
+	deadline := time.Now().Add(time.Second)
+	for len(connector.recordedPublishCalls()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("no publish call was recorded in time")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("expected no error, got %v", got.err)
+		}
+		wantLine := "stopping: waiting up to 2s for in-flight publishes, press Ctrl-C again to quit"
+		if !strings.Contains(got.output, wantLine) {
+			t.Errorf("expected the stopping message, got: %s", got.output)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("pub did not return after ctx was cancelled")
 	}
 }

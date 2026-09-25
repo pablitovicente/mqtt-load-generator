@@ -30,6 +30,10 @@ func TestRunSubscribe_RecordsDeliveredMessagesInProgress(t *testing.T) {
 
 	waitFor(t, time.Second, func() bool { return progress.Snapshot().Received == messageCount })
 
+	if progress.Snapshot().SubscribedAt.IsZero() {
+		t.Error("expected SubscribedAt to be set once the subscribe was acknowledged")
+	}
+
 	cancel()
 
 	select {
@@ -112,6 +116,9 @@ func TestRunSubscribe_FailedSubscribeReturnsError(t *testing.T) {
 	if !client.wasDisconnected() {
 		t.Error("expected Disconnect to be called after a failed subscribe")
 	}
+	if !progress.Snapshot().SubscribedAt.IsZero() {
+		t.Error("expected SubscribedAt to stay zero when the subscribe fails")
+	}
 }
 
 func TestRunSubscribe_SubscribeTimesOut(t *testing.T) {
@@ -131,5 +138,8 @@ func TestRunSubscribe_SubscribeTimesOut(t *testing.T) {
 	}
 	if !client.wasDisconnected() {
 		t.Error("expected Disconnect to be called after a failed subscribe")
+	}
+	if !progress.Snapshot().SubscribedAt.IsZero() {
+		t.Error("expected SubscribedAt to stay zero when the subscribe times out")
 	}
 }

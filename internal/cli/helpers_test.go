@@ -43,6 +43,11 @@ type fakeConnector struct {
 
 	// subscribeError, if set, makes every Subscribe on the clients it hands out fail with it.
 	subscribeError error
+
+	// publishDelay, if set, makes every Publish call sleep this long before returning, so a
+	// test can keep a run "in flight" for a known stretch of time instead of guessing how fast
+	// a publish would otherwise complete.
+	publishDelay time.Duration
 }
 
 func (connector *fakeConnector) connect(_ context.Context, options broker.Options, clientID string, _ *slog.Logger) (connectedClient, error) {
@@ -106,7 +111,14 @@ func (client *fakeConnectedClient) Publish(topic string, qos byte, _ bool, paylo
 		payload:  append([]byte(nil), payload...),
 	})
 	failPublish := client.connector.failPublish
+	delay := client.connector.publishDelay
 	client.connector.mutex.Unlock()
+
+	// The call is recorded above, before the delay, so a test waiting on recordedPublishCalls
+	// can tell the publish is in flight instead of guessing how long the delay takes.
+	if delay > 0 {
+		time.Sleep(delay)
+	}
 
 	if failPublish != nil {
 		return failedToken{err: failPublish}

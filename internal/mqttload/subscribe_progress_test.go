@@ -6,12 +6,13 @@ func TestSubscribeProgress_Snapshot(t *testing.T) {
 	progress := NewSubscribeProgress()
 
 	snapshot := progress.Snapshot()
-	if snapshot.Received != 0 || !snapshot.LastMessageAt.IsZero() {
+	if snapshot.Received != 0 || !snapshot.LastMessageAt.IsZero() || !snapshot.SubscribedAt.IsZero() {
 		t.Fatalf("expected a zero-value snapshot, got %+v", snapshot)
 	}
 
 	progress.recordMessage()
 	progress.recordMessage()
+	progress.recordSubscribed()
 
 	snapshot = progress.Snapshot()
 	if snapshot.Received != 2 {
@@ -19,6 +20,9 @@ func TestSubscribeProgress_Snapshot(t *testing.T) {
 	}
 	if snapshot.LastMessageAt.IsZero() {
 		t.Error("expected LastMessageAt to be set after recordMessage")
+	}
+	if snapshot.SubscribedAt.IsZero() {
+		t.Error("expected SubscribedAt to be set after recordSubscribed")
 	}
 }
 

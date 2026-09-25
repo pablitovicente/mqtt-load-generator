@@ -19,7 +19,7 @@ func TestRunSubscribeLog_ReportsReceivedMessagesAndSummary(t *testing.T) {
 		close(done)
 	}()
 
-	progress.set(mqttload.SubscribeSnapshot{Received: 5, LastMessageAt: time.Now()})
+	progress.set(mqttload.SubscribeSnapshot{Received: 5, LastMessageAt: time.Now(), SubscribedAt: time.Now()})
 
 	waitFor(t, time.Second, func() bool {
 		return strings.Contains(logs.String(), "received 5 messages so far")
@@ -65,6 +65,32 @@ func TestRunSubscribeLog_ResetsAfterSilence(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("runSubscribeLog did not return")
+	}
+}
+
+// TestRunSubscribeLog_NoSummaryWhenNeverSubscribed checks that when the subscribe never
+// succeeded (SubscribedAt still zero), the final "sub stopped" line is skipped: sub never
+// actually ran, so the summary would be misleading.
+func TestRunSubscribeLog_NoSummaryWhenNeverSubscribed(t *testing.T) {
+	progress := newFakeSubscribeProgress()
+	logger, logs := captureLogger()
+
+	done := make(chan struct{})
+	go func() {
+		runSubscribeLog(progress, logger, time.Hour, time.Millisecond)
+		close(done)
+	}()
+
+	progress.finish()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("runSubscribeLog did not return")
+	}
+
+	if strings.Contains(logs.String(), "sub stopped") {
+		t.Errorf("expected no summary line when the subscribe never succeeded, got: %s", logs.String())
 	}
 }
 
@@ -124,7 +150,7 @@ func TestRunSubscribeBar_PrintsPromptAndEndsLineWhenStoppedEarly(t *testing.T) {
 func TestRunSubscribeBar_LogsSummaryOnceDone(t *testing.T) {
 	progress := newFakeSubscribeProgress()
 	logger, logs := captureLogger()
-	progress.set(mqttload.SubscribeSnapshot{Received: 42})
+	progress.set(mqttload.SubscribeSnapshot{Received: 42, SubscribedAt: time.Now()})
 
 	done := make(chan struct{})
 	go func() {
@@ -142,6 +168,31 @@ func TestRunSubscribeBar_LogsSummaryOnceDone(t *testing.T) {
 
 	if !strings.Contains(logs.String(), "sub stopped") || !strings.Contains(logs.String(), "totalReceived=42") {
 		t.Errorf("expected the summary line with the total, got: %s", logs.String())
+	}
+}
+
+// TestRunSubscribeBar_NoSummaryWhenNeverSubscribed is the bar-mode counterpart to
+// TestRunSubscribeLog_NoSummaryWhenNeverSubscribed.
+func TestRunSubscribeBar_NoSummaryWhenNeverSubscribed(t *testing.T) {
+	progress := newFakeSubscribeProgress()
+	logger, logs := captureLogger()
+
+	done := make(chan struct{})
+	go func() {
+		runSubscribeBar(progress, logger, &bytes.Buffer{}, time.Millisecond)
+		close(done)
+	}()
+
+	progress.finish()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("runSubscribeBar did not return")
+	}
+
+	if strings.Contains(logs.String(), "sub stopped") {
+		t.Errorf("expected no summary line when the subscribe never succeeded, got: %s", logs.String())
 	}
 }
 

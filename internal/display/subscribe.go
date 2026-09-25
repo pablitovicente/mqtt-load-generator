@@ -103,9 +103,16 @@ func runSubscribeLog(progress subscribeProgressSource, logger *slog.Logger, rese
 }
 
 // logSubscribeSummary logs the final "sub stopped" line: the true total received over the
-// whole run, regardless of any --reset-after resets shown along the way.
+// whole run, regardless of any --reset-after resets shown along the way. It logs nothing when
+// the subscribe never succeeded (SubscribedAt still zero): sub never actually ran, so a summary
+// would be misleading, and mqttload already reports the subscribe error itself.
 func logSubscribeSummary(logger *slog.Logger, progress subscribeProgressSource) {
-	logger.Info("sub stopped", "totalReceived", progress.Snapshot().Received)
+	snapshot := progress.Snapshot()
+	if snapshot.SubscribedAt.IsZero() {
+		return
+	}
+
+	logger.Info("sub stopped", "totalReceived", snapshot.Received)
 }
 
 // rateReport is what one reporting tick decided to do, as a plain value so the decision logic

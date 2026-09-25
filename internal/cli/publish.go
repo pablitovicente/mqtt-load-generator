@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -82,7 +83,23 @@ func newPublishRunFunction(connection *Connection, publish *Publish, connect con
 			display.RunPublishProgress(progress, totalMessages, logger, cmd.ErrOrStderr())
 		}()
 
+		// The first Ctrl-C cancels cmd.Context(), but the run keeps going until in-flight
+		// publishes finish or --ack-timeout runs out, which can take a while and looks frozen
+		// otherwise. Log a line about it once. runFinished closes as soon as RunPublish
+		// returns, so this goroutine always exits, whichever of the two happens first.
+		runFinished := make(chan struct{})
+		go func() {
+			select {
+			case <-cmd.Context().Done():
+				logger.Info(fmt.Sprintf(
+					"stopping: waiting up to %s for in-flight publishes, press Ctrl-C again to quit",
+					publish.AckTimeout))
+			case <-runFinished:
+			}
+		}()
+
 		err := mqttload.RunPublish(cmd.Context(), connectClient, logger, publishOptions, progress)
+		close(runFinished)
 		<-displayStopped
 
 		return err
