@@ -102,6 +102,16 @@ func TestRunSubscribe_FailedSubscribeReturnsError(t *testing.T) {
 	if !strings.Contains(err.Error(), "boom") {
 		t.Errorf("expected error to wrap the subscribe failure, got: %v", err)
 	}
+
+	// The display waits for Done before the command can return: if it never closes, sub hangs.
+	select {
+	case <-progress.Done():
+	default:
+		t.Error("expected progress to be finished after a failed subscribe")
+	}
+	if !client.wasDisconnected() {
+		t.Error("expected Disconnect to be called after a failed subscribe")
+	}
 }
 
 func TestRunSubscribe_SubscribeTimesOut(t *testing.T) {
@@ -111,5 +121,15 @@ func TestRunSubscribe_SubscribeTimesOut(t *testing.T) {
 	err := RunSubscribe(context.Background(), client, discardLogger(), "load/test", 1, progress)
 	if err == nil {
 		t.Fatal("expected a timeout error, got none")
+	}
+
+	// The display waits for Done before the command can return: if it never closes, sub hangs.
+	select {
+	case <-progress.Done():
+	default:
+		t.Error("expected progress to be finished after a failed subscribe")
+	}
+	if !client.wasDisconnected() {
+		t.Error("expected Disconnect to be called after a failed subscribe")
 	}
 }

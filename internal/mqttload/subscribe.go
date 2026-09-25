@@ -30,7 +30,8 @@ const maxWaitForQueuedSends = 250 * time.Millisecond
 
 // RunSubscribe subscribes to topic at the given QoS and records what it receives in progress
 // until ctx is cancelled. Ctrl-C is the normal way to stop it: cancelling ctx is not an error.
-// RunSubscribe disconnects the client, marks progress as done, and returns nil once it stops.
+// However it returns, including when the subscribe fails, RunSubscribe disconnects the client
+// and marks progress as done.
 func RunSubscribe(
 	ctx context.Context,
 	client Subscriber,
@@ -39,6 +40,12 @@ func RunSubscribe(
 	qos byte,
 	progress *SubscribeProgress,
 ) error {
+	// The display waits for progress.Done() before the command can return, so progress must be
+	// finished on every return path. Deferred calls run last-in first-out: Disconnect first,
+	// then finish.
+	defer progress.finish()
+	defer client.Disconnect(maxWaitForQueuedSends)
+
 	if err := subscribeAndWait(client, topic, qos, func(_ string, _ []byte) {
 		progress.recordMessage()
 	}); err != nil {
@@ -48,9 +55,6 @@ func RunSubscribe(
 	logger.Info("subscribed", "topic", topic, "qos", qos)
 
 	<-ctx.Done()
-
-	client.Disconnect(maxWaitForQueuedSends)
-	progress.finish()
 
 	return nil
 }

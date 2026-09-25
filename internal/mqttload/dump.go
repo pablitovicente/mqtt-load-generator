@@ -46,6 +46,7 @@ func RunDump(
 	}
 
 	if err := subscribeAndWait(client, topic, qos, onMessage); err != nil {
+		client.Disconnect(maxWaitForQueuedSends)
 		return err
 	}
 

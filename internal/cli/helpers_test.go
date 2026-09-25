@@ -40,6 +40,9 @@ type fakeConnector struct {
 	// failPublish, if set, is returned as the error on every publish's token, so tests can
 	// check the failed counter and pub's exit code without a real broker.
 	failPublish error
+
+	// subscribeError, if set, makes every Subscribe on the clients it hands out fail with it.
+	subscribeError error
 }
 
 func (connector *fakeConnector) connect(_ context.Context, options broker.Options, clientID string, _ *slog.Logger) (connectedClient, error) {
@@ -88,6 +91,9 @@ type fakeConnectedClient struct {
 }
 
 func (client *fakeConnectedClient) Subscribe(_ string, _ byte, _ func(topic string, payload []byte)) broker.Token {
+	if client.connector.subscribeError != nil {
+		return failedToken{err: client.connector.subscribeError}
+	}
 	return succeededToken{}
 }
 

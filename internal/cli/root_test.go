@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pablitovicente/mqtt-load-generator/internal/broker"
 )
@@ -693,6 +694,32 @@ func TestOrderedFlag(t *testing.T) {
 
 			if calls[0].options.Ordered != tt.wantOrdered {
 				t.Errorf("Ordered = %v, want %v", calls[0].options.Ordered, tt.wantOrdered)
+			}
+		})
+	}
+}
+
+// TestSubscribeAndDumpReturnWhenSubscribeFails checks that a failed subscribe (for example a
+// topic the broker rejects) ends sub and dump with an error. sub used to hang forever here,
+// waiting for a display that was never told the run had ended, and ignored Ctrl-C.
+func TestSubscribeAndDumpReturnWhenSubscribeFails(t *testing.T) {
+	for _, args := range [][]string{{"sub"}, {"sub", "--disable-bar"}, {"dump"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			connector := &fakeConnector{subscribeError: errors.New("invalid topic")}
+
+			done := make(chan error, 1)
+			go func() {
+				_, err := runCommandWithConnector(t, context.Background(), connector, args...)
+				done <- err
+			}()
+
+			select {
+			case err := <-done:
+				if err == nil || !strings.Contains(err.Error(), "invalid topic") {
+					t.Fatalf("expected the subscribe error, got %v", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("command did not return after the subscribe failed")
 			}
 		})
 	}
