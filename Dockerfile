@@ -14,4 +14,9 @@ FROM alpine:3
 
 COPY --from=builder /mqtt-load-generator /mqtt-load-generator
 WORKDIR /app
+
+# Run as the "nobody" user that Alpine ships, not root. A numeric ID, because Kubernetes can
+# only check runAsNonRoot against a number.
+USER 65534:65534
+
 ENTRYPOINT [ "/mqtt-load-generator" ]

@@ -16,13 +16,22 @@ spec:
     spec:
       containers:
       - name: mqtt-load-generator
-        image: pgschk/mqtt-load-generator:latest
+        image: ghcr.io/pablitovicente/mqtt-load-generator:v2.0.0
         env:
         - name: MQTT_PASSWORD
           valueFrom:
             secretKeyRef:
               name: mqtt-load-generator
               key: password
+        # No CPU limit on purpose: Kubernetes throttles a container that goes over its CPU limit,
+        # which pauses the tool mid-run and distorts the rates it measures. The memory limit
+        # stops runaway buffering from affecting the node. Raise these for bigger runs.
+        resources:
+          requests:
+            cpu: 500m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
         args:
         - -h
         - mqtt # hostname of mqtt server

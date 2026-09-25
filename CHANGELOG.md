@@ -62,6 +62,9 @@ and `dump`. The code was rewritten and now has tests. 1.x releases remain availa
 - `-z normal` and `-z random` wait the full average interval (see "Bugs fixed"). Runs with
   the default flags are slower than in 1.x.
 - `sub` uses the QoS given with `-q`.
+- `sub --disable-bar --reset-after N` still restarts the logged count after N seconds without
+  a message, but the final "sub stopped" line reports every message received since `sub`
+  started, not only those since the last reset.
 - `pub` exits with a non-zero code when any publish failed or timed out.
 - Logs are JSON on stderr.
 - The `pkg/MQTTClient` package is removed.

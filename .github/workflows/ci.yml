@@ -20,8 +20,12 @@ jobs:
       - name: go test
         run: go test -race -cover ./...
 
+      # goinstall builds golangci-lint with this job's Go (1.27, from go.mod). A prebuilt
+      # binary made with an older Go refuses to check a go 1.27 module. Same version as
+      # the one used locally.
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v9
         with:
-          working-directory: .
+          version: v2.14.0
+          install-mode: goinstall
           args: ./...
