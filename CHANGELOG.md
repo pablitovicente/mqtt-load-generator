@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- `pub` writes a report as one JSON line on stdout when it finishes: message counts, acks per
+  second, ack and connect latency percentiles, time spent waiting for in-flight slots, and the
+  slowest, median and fastest client. See "Report" in the README.
+
 ## 2.0.0
 
 The CLI moved to Cobra: one binary, `mqtt-load-generator`, with the subcommands `pub`, `sub`

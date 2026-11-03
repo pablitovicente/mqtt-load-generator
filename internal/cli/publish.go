@@ -98,9 +98,22 @@ func newPublishRunFunction(connection *Connection, publish *Publish, connect con
 			}
 		}()
 
-		err := mqttload.RunPublish(cmd.Context(), connectClient, logger, publishOptions, progress, mqttload.NewPublishStats(publish.Clients, false))
+		stats := mqttload.NewPublishStats(publish.Clients, false)
+
+		err := mqttload.RunPublish(cmd.Context(), connectClient, logger, publishOptions, progress, stats)
 		close(runFinished)
 		<-displayStopped
+
+		// The report goes to stdout, even when some publishes failed. It is skipped only when
+		// publishing never started.
+		if progress.Snapshot().ConnectFailed {
+			return err
+		}
+
+		reportErr := display.WritePublishReport(cmd.OutOrStdout(), mqttload.BuildPublishReport(progress, stats, publishOptions))
+		if err == nil {
+			return reportErr
+		}
 
 		return err
 	}

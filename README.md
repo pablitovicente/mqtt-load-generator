@@ -91,6 +91,52 @@ can acknowledge a message and still drop it later, for example when a subscriber
 full. To count what was actually delivered, run `sub` on the same topic and compare its count
 with the `acked` count from `pub`.
 
+### Report
+
+When `pub` finishes, it writes one JSON line to stdout. Logs, progress bars and the
+"pub stopped" line go to stderr. The line is written also when some publishes failed or timed
+out, and after Ctrl-C during publishing. It is not written when connecting failed.
+
+```json
+{"run":{"startedAt":"...","finishedAt":"...","elapsedSeconds":4.28,"host":"lab-01","gomaxprocs":16},
+ "settings":{"clients":100,"inflight":500,"qos":1,"payloadBytes":512},
+ "messages":{"published":500000,"acked":500000,"failed":0,"timedOut":0},
+ "acksPerInterval":{"intervalSeconds":1,"average":116722,"lowest":98100,"highest":121400,"values":[98100,119800]},
+ "ackLatencyMicroseconds":{"p50":412000,"p90":455000,"p99":480000,"p999":495000,"max":502000},
+ "connectLatencyMicroseconds":{"p50":3100,"p99":9800,"max":11200},
+ "inflightWait":{"shareOfRunTime":0.92},
+ "perClientAckedPerSecond":{"slowest":1080,"median":1168,"fastest":1201}}
+```
+
+The line is one object on one line. The example is split over several lines to fit this page.
+
+- `run`: when publishing started and finished, how long it took, the host name and the
+  number of CPUs Go uses.
+- `settings`: the clients, in-flight limit, QoS and payload size of the run.
+- `messages`: the same counts as the "pub stopped" line.
+- `acksPerInterval`: acknowledgements per second. `values` has one number per full second.
+  A last, partial second is not in `values`. `average` is all acks divided by the run time.
+  `lowest` and `highest` come from `values`.
+- `ackLatencyMicroseconds`: time until the tool saw the ack, in whole microseconds. `p999`
+  means p99.9. Left out at QoS 0, where there is no ack from the broker.
+- `connectLatencyMicroseconds`: time to connect one client, in whole microseconds.
+- `inflightWait.shareOfRunTime`: the share of the run that clients spent waiting for a free
+  in-flight slot, from 0 to 1. A value near 1 means waiting for acks limits the rate.
+- `perClientAckedPerSecond`: acks per second of the slowest client, the median client and the
+  fastest client.
+
+Save the report to a file, with the logs still on the terminal:
+
+```bash
+./bin/mqtt-load-generator pub -c 1000 -n 100 -h localhost > report.json
+```
+
+Read one value with `jq`:
+
+```bash
+jq '.ackLatencyMicroseconds.p99' report.json
+```
+
 ### Subscribe (`sub`)
 
 ```bash
