@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.2
 
 ### New
 
@@ -9,6 +9,13 @@
   slowest, median and fastest client. See "Report" in the README.
 - `--per-client-stats` adds one entry per client to the `pub` report: client ID, acked count
   and ack latency (mean, p50, p99, max).
+
+## 2.0.1
+
+### Bugs fixed
+
+- The module path now ends in `/v2`, as Go requires for v2 and later. Without it, `go install`
+  and `go get` could not fetch any 2.x version.
 
 ## 2.0.0
 
