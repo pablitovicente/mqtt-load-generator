@@ -44,9 +44,11 @@ func latencyValueForIndex(countsIndex int) int64 {
 	return int64(subBucketIndex) << uint(bucketIndex)
 }
 
-// latencyBuckets is one dense array of counters, safe for many goroutines to record into.
+// latencyBuckets is one dense array of counters, safe for many goroutines to record into. The
+// counters are 64-bit: runs of several days at 250k msg/s can push one bucket past the 4.3
+// billion a 32-bit counter holds.
 type latencyBuckets struct {
-	counts [latencyCountsLength]atomic.Uint32
+	counts [latencyCountsLength]atomic.Uint64
 }
 
 func (buckets *latencyBuckets) record(microseconds int64) {
@@ -102,7 +104,7 @@ func (set *latencyBucketSet) addTo(histogram *hdrhistogram.Histogram) {
 }
 
 // latencyChunk holds the counters for 128 neighbouring counter positions.
-type latencyChunk [latencySubBucketHalfCount]atomic.Uint32
+type latencyChunk [latencySubBucketHalfCount]atomic.Uint64
 
 // chunkedLatencyBuckets is one client's counters, with memory allocated only for the ranges
 // that were hit. Every chunk covers 128 positions (countsIndex / 128). That lines up with the

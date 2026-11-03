@@ -97,6 +97,9 @@ func RunSubscribe(
 	case <-countReached:
 	}
 
+	// The run ends here, before the deferred Disconnect, so its time is not in the report.
+	progress.recordStopped()
+
 	close(runOver)
 	<-samplerStopped
 

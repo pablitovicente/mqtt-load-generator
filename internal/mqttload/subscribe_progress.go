@@ -78,9 +78,17 @@ func (progress *SubscribeProgress) recordSubscribed() {
 	progress.subscribedAt.set(time.Now())
 }
 
-// finish marks the run as over.
-func (progress *SubscribeProgress) finish() {
+// recordStopped records that the run stopped, now: --count was reached or ctx was cancelled.
+func (progress *SubscribeProgress) recordStopped() {
 	progress.finishedAt.set(time.Now())
+}
+
+// finish marks the run as over. When the run never got to recordStopped (the subscribe
+// failed), it sets the end time itself.
+func (progress *SubscribeProgress) finish() {
+	if progress.finishedAt.load().IsZero() {
+		progress.finishedAt.set(time.Now())
+	}
 	close(progress.done)
 }
 

@@ -177,12 +177,14 @@ func buildInflightWait(stats *PublishStats, elapsed time.Duration) PublishReport
 		return PublishReportInflightWait{}
 	}
 
-	var totalWait time.Duration
+	// Summed in seconds as float64: a time.Duration sum overflows after 292 years of client
+	// time, which 10,000 clients reach in about 10 days.
+	var totalWaitSeconds float64
 	for _, client := range stats.clients {
-		totalWait += client.inflightWait
+		totalWaitSeconds += client.inflightWait.Seconds()
 	}
 
-	share := float64(totalWait) / (float64(len(stats.clients)) * float64(elapsed))
+	share := totalWaitSeconds / (float64(len(stats.clients)) * elapsed.Seconds())
 
 	return PublishReportInflightWait{ShareOfRunTime: min(max(share, 0), 1)}
 }
