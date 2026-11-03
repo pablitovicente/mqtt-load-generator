@@ -40,8 +40,8 @@ type PublishOptions struct {
 // Ctrl-C (ctx cancelled) stops sending new messages, waits for whatever was already in flight
 // (bounded by AckTimeout), disconnects, and reports what happened -- that on its own is not an
 // error.
-func RunPublish(ctx context.Context, connect connectClientFunc, logger *slog.Logger, options PublishOptions, progress *PublishProgress) error {
-	clients, err := connectClients(ctx, connect, options.Clients, options.ConnectConcurrency, progress)
+func RunPublish(ctx context.Context, connect connectClientFunc, logger *slog.Logger, options PublishOptions, progress *PublishProgress, stats *PublishStats) error {
+	clients, err := connectClients(ctx, connect, options.Clients, options.ConnectConcurrency, progress, stats)
 	if err != nil {
 		progress.finishConnecting(false)
 		progress.finish()
@@ -58,17 +58,26 @@ func RunPublish(ctx context.Context, connect connectClientFunc, logger *slog.Log
 	logger.Info("connected", "clients", len(clients))
 	progress.finishConnecting(true)
 
+	// The sampler stops when progress.finish closes Done. Wait for it below, so
+	// stats.ackedPerInterval is safe to read once RunPublish returns.
+	samplerStopped := make(chan struct{})
+	go func() {
+		defer close(samplerStopped)
+		stats.sampleAcked(progress, ackSampleInterval)
+	}()
+
 	var waitGroup sync.WaitGroup
 	for i, client := range clients {
 		waitGroup.Add(1)
-		go func(clientNumber int, client Publisher, counters *publishCounters) {
+		go func(clientNumber int, client Publisher, counters *publishCounters, stats *clientStats) {
 			defer waitGroup.Done()
-			runClientPublish(ctx, client, clientNumber, options, counters)
-		}(i+1, client, progress.counterFor(i))
+			runClientPublish(ctx, client, clientNumber, options, counters, stats)
+		}(i+1, client, progress.counterFor(i), stats.clients[i])
 	}
 	waitGroup.Wait()
 
 	progress.finish()
+	<-samplerStopped
 
 	summary := progress.Snapshot()
 	if summary.Failed+summary.TimedOut > 0 {
@@ -91,7 +100,7 @@ func clientTopic(topic string, clientNumber int, suffix bool) string {
 // runClientPublish runs one client's share of the load: up to Options.Count publishes, with up
 // to Options.InFlight of them unacknowledged at once. It stops sending as soon as ctx is
 // cancelled, then waits for whatever was already in flight before disconnecting.
-func runClientPublish(ctx context.Context, client Publisher, clientNumber int, options PublishOptions, counters *publishCounters) {
+func runClientPublish(ctx context.Context, client Publisher, clientNumber int, options PublishOptions, counters *publishCounters, stats *clientStats) {
 	// Each client gets its own randomly seeded generator, so clients don't share state and
 	// runs aren't identical from one process start to the next.
 	random := rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))
@@ -103,6 +112,7 @@ func runClientPublish(ctx context.Context, client Publisher, clientNumber int, o
 		pacer:           newPacer(options.Schedule, options.IntervalMilliseconds, random),
 		options:         options,
 		counters:        counters,
+		stats:           stats,
 		inflight:        semaphore.NewWeighted(int64(options.InFlight)),
 	}
 
@@ -111,6 +121,7 @@ func runClientPublish(ctx context.Context, client Publisher, clientNumber int, o
 	// Disconnect does not wait for acknowledgements itself, so wait for every outstanding
 	// publish to be acked, fail or time out first.
 	publisher.outstandingPublishes.Wait()
+	stats.finishedAt = time.Now()
 
 	client.Disconnect(maxWaitForQueuedSends)
 }
@@ -123,6 +134,7 @@ type publishingClient struct {
 	pacer           *pacer
 	options         PublishOptions
 	counters        *publishCounters
+	stats           *clientStats
 
 	// inflight is the in-flight window: one code path for every --inflight value, including
 	// 1. Acquire is "take a slot" (blocks once InFlight publishes are outstanding, and stops
@@ -139,15 +151,19 @@ type publishingClient struct {
 // early when ctx is cancelled.
 func (publisher *publishingClient) sendMessages(ctx context.Context) {
 	for i := 0; i < publisher.options.Count; i++ {
+		waitStartedAt := time.Now()
 		if err := publisher.inflight.Acquire(ctx, 1); err != nil {
 			return
 		}
+
+		publishStartedAt := time.Now()
+		publisher.stats.inflightWait += publishStartedAt.Sub(waitStartedAt)
 
 		token := publisher.client.Publish(publisher.topic, publisher.options.QoS, false, publisher.generatePayload())
 		publisher.counters.published.Add(1)
 
 		publisher.outstandingPublishes.Add(1)
-		go publisher.waitForResult(token)
+		go publisher.waitForResult(token, publishStartedAt)
 
 		// No wait after the last message: it would only add one interval to the run time and
 		// lower the reported messages per second.
@@ -162,8 +178,9 @@ func (publisher *publishingClient) sendMessages(ctx context.Context) {
 }
 
 // waitForResult waits for one publish to be acked, fail or time out, counts the result, and
-// frees its in-flight slot.
-func (publisher *publishingClient) waitForResult(token broker.Token) {
+// frees its in-flight slot. An acked publish at QoS 1 or 2 also records how long the broker
+// took to answer, counted from publishStartedAt. At QoS 0 there is no broker answer to time.
+func (publisher *publishingClient) waitForResult(token broker.Token, publishStartedAt time.Time) {
 	defer publisher.outstandingPublishes.Done()
 	defer publisher.inflight.Release(1)
 
@@ -173,6 +190,15 @@ func (publisher *publishingClient) waitForResult(token broker.Token) {
 	case token.Error() != nil:
 		publisher.counters.failed.Add(1)
 	default:
+		if publisher.options.QoS > 0 {
+			microseconds := time.Since(publishStartedAt).Microseconds()
+			publisher.stats.sharedLatency.record(microseconds)
+
+			if publisher.stats.perClientLatency != nil {
+				publisher.stats.perClientLatency.record(microseconds)
+			}
+		}
+
 		publisher.counters.acked.Add(1)
 	}
 }

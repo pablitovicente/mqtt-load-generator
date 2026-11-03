@@ -179,6 +179,11 @@ type fakePublisher struct {
 	disconnected bool
 
 	nextToken func(call fakePublishCall) broker.Token
+	clientID  string
+}
+
+func (client *fakePublisher) ClientID() string {
+	return client.clientID
 }
 
 func (client *fakePublisher) Publish(topic string, qos byte, _ bool, payload []byte) broker.Token {

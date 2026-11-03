@@ -98,7 +98,7 @@ func newPublishRunFunction(connection *Connection, publish *Publish, connect con
 			}
 		}()
 
-		err := mqttload.RunPublish(cmd.Context(), connectClient, logger, publishOptions, progress)
+		err := mqttload.RunPublish(cmd.Context(), connectClient, logger, publishOptions, progress, mqttload.NewPublishStats(publish.Clients, false))
 		close(runFinished)
 		<-displayStopped
 

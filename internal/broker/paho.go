@@ -16,6 +16,12 @@ import (
 // Client is a connected MQTT client, backed by paho.mqtt.golang.
 type Client struct {
 	pahoClient mqtt.Client
+	clientID   string
+}
+
+// ClientID returns the client ID this client connected with.
+func (client *Client) ClientID() string {
+	return client.clientID
 }
 
 // Dial connects to the broker described by options, waiting for the connection to complete or
@@ -71,7 +77,7 @@ func Dial(ctx context.Context, options Options, clientID string, logger *slog.Lo
 		return nil, ctx.Err()
 	}
 
-	return &Client{pahoClient: pahoClient}, nil
+	return &Client{pahoClient: pahoClient, clientID: clientID}, nil
 }
 
 // Publish sends payload to topic at the given QoS. The returned Token completes once the
