@@ -121,7 +121,9 @@ The line is one object on one line. The example is split over several lines to f
   means p99.9. Left out at QoS 0, where there is no ack from the broker.
 - `connectLatencyMicroseconds`: time to connect one client, in whole microseconds.
 - `inflightWait.shareOfRunTime`: the share of the run that clients spent waiting for a free
-  in-flight slot, from 0 to 1. A value near 1 means waiting for acks limits the rate.
+  in-flight slot, from 0 to 1. A value near 1 means waiting for acks limits the rate. With
+  `--inflight 1` it is always close to 1, because each client waits for every ack before
+  sending the next message. It tells you something with a higher `--inflight`.
 - `perClientAckedPerSecond`: acks per second of the slowest client, the median client and the
   fastest client.
 - `clients`: only with `--per-client-stats`. One entry per client, in client order, with
