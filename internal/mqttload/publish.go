@@ -63,7 +63,7 @@ func RunPublish(ctx context.Context, connect connectClientFunc, logger *slog.Log
 	samplerStopped := make(chan struct{})
 	go func() {
 		defer close(samplerStopped)
-		stats.sampleAcked(progress, ackSampleInterval)
+		stats.ackedPerInterval = sampleTotal(func() int64 { return progress.Snapshot().Acked }, progress.Done(), ackSampleInterval)
 	}()
 
 	var waitGroup sync.WaitGroup

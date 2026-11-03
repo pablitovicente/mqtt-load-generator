@@ -5,16 +5,16 @@ import (
 	"time"
 )
 
-// TestSampleAcked_RecordsFullIntervalsAndStops checks that the sampler records the acks of each
+// TestSampleTotal_RecordsFullIntervalsAndStops checks that the sampler records the acks of each
 // interval and returns once the run is over.
-func TestSampleAcked_RecordsFullIntervalsAndStops(t *testing.T) {
+func TestSampleTotal_RecordsFullIntervalsAndStops(t *testing.T) {
 	progress := NewPublishProgress(1)
 	stats := NewPublishStats(1, false)
 
 	stopped := make(chan struct{})
 	go func() {
 		defer close(stopped)
-		stats.sampleAcked(progress, 10*time.Millisecond)
+		stats.ackedPerInterval = sampleTotal(func() int64 { return progress.Snapshot().Acked }, progress.Done(), 10*time.Millisecond)
 	}()
 
 	progress.counterFor(0).acked.Add(5)

@@ -50,6 +50,8 @@ type Subscribe struct {
 	DisableBar bool
 	ResetAfter float64
 	Ordered    bool
+	Count      int64
+	Benchmark  bool
 }
 
 // Dump holds the settings for the dump command.
@@ -159,6 +161,9 @@ func (publish *Publish) ValidateWithConnection(connection *Connection) error {
 func (subscribe *Subscribe) Validate() error {
 	if subscribe.ResetAfter <= 0 {
 		return fmt.Errorf("--reset-after must be above 0 (got %v)", subscribe.ResetAfter)
+	}
+	if subscribe.Count < 0 {
+		return fmt.Errorf("--count must be 0 or more (got %d)", subscribe.Count)
 	}
 	return nil
 }

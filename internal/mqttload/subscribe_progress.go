@@ -10,6 +10,9 @@ import (
 type SubscribeSnapshot struct {
 	Received int64
 
+	// ReceivedBytes is the total size of all received payloads.
+	ReceivedBytes int64
+
 	// LastMessageAt is zero until the first message arrives.
 	LastMessageAt time.Time
 
@@ -28,6 +31,7 @@ type SubscribeSnapshot struct {
 // state (see display.RunSubscribeLog), so this always reports the true total for the run.
 type SubscribeProgress struct {
 	received      atomic.Int64
+	receivedBytes atomic.Int64
 	lastMessageAt atomicTime
 	subscribedAt  atomicTime
 
@@ -45,10 +49,17 @@ func (progress *SubscribeProgress) Done() <-chan struct{} {
 	return progress.done
 }
 
-// recordMessage records that one message was received, now.
-func (progress *SubscribeProgress) recordMessage() {
-	progress.received.Add(1)
-	progress.lastMessageAt.set(time.Now())
+// recordMessage records that one message of payloadSize bytes was received, now. It returns
+// the number of messages received so far (this one included) and the time it recorded, so the
+// caller can use both without another clock read.
+func (progress *SubscribeProgress) recordMessage(payloadSize int) (int64, time.Time) {
+	now := time.Now()
+
+	number := progress.received.Add(1)
+	progress.receivedBytes.Add(int64(payloadSize))
+	progress.lastMessageAt.set(now)
+
+	return number, now
 }
 
 // recordSubscribed records that the broker acknowledged the subscribe request, now.
@@ -65,6 +76,7 @@ func (progress *SubscribeProgress) finish() {
 func (progress *SubscribeProgress) Snapshot() SubscribeSnapshot {
 	return SubscribeSnapshot{
 		Received:      progress.received.Load(),
+		ReceivedBytes: progress.receivedBytes.Load(),
 		LastMessageAt: progress.lastMessageAt.load(),
 		SubscribedAt:  progress.subscribedAt.load(),
 	}

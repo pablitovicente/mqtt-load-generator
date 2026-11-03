@@ -53,6 +53,8 @@ var subscribeFlagSpecs = []flagSpec{
 	{"disable-bar", ""},
 	{"reset-after", ""},
 	{"ordered", ""},
+	{"count", ""},
+	{"benchmark", ""},
 }
 
 var dumpFlagSpecs = []flagSpec{
@@ -411,7 +413,6 @@ func TestFlagsRejectedOnWrongCommand(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"count rejected on sub", []string{"sub", "--count", "5"}},
 		{"count shorthand rejected on sub", []string{"sub", "-c", "5"}},
 		{"count shorthand rejected on dump", []string{"dump", "-c", "5"}},
 		{"count rejected on dump", []string{"dump", "--count", "5"}},

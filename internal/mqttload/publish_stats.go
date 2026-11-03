@@ -57,22 +57,24 @@ func NewPublishStats(clients int, perClientStats bool) *PublishStats {
 	return stats
 }
 
-// sampleAcked records the acks of every full interval until the run is over. A last, partly
-// finished interval is dropped. It reads the same counters the progress display reads.
-func (stats *PublishStats) sampleAcked(progress *PublishProgress, interval time.Duration) {
+// sampleTotal reads currentTotal every interval until done closes, and returns how much the
+// total grew in each full interval. A last, partly finished interval is dropped. pub samples
+// acks and sub samples received messages, both from the counters the progress display reads.
+func sampleTotal(currentTotal func() int64, done <-chan struct{}, interval time.Duration) []int64 {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	var previousAcked int64
+	var growthPerInterval []int64
+	var previousTotal int64
 
 	for {
 		select {
 		case <-ticker.C:
-			ackedTotal := progress.Snapshot().Acked
-			stats.ackedPerInterval = append(stats.ackedPerInterval, ackedTotal-previousAcked)
-			previousAcked = ackedTotal
-		case <-progress.Done():
-			return
+			total := currentTotal()
+			growthPerInterval = append(growthPerInterval, total-previousTotal)
+			previousTotal = total
+		case <-done:
+			return growthPerInterval
 		}
 	}
 }

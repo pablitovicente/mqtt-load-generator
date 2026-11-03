@@ -10,8 +10,8 @@ func TestSubscribeProgress_Snapshot(t *testing.T) {
 		t.Fatalf("expected a zero-value snapshot, got %+v", snapshot)
 	}
 
-	progress.recordMessage()
-	progress.recordMessage()
+	progress.recordMessage(0)
+	progress.recordMessage(0)
 	progress.recordSubscribed()
 
 	snapshot = progress.Snapshot()
