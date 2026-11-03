@@ -98,7 +98,7 @@ func newPublishRunFunction(connection *Connection, publish *Publish, connect con
 			}
 		}()
 
-		stats := mqttload.NewPublishStats(publish.Clients, false)
+		stats := mqttload.NewPublishStats(publish.Clients, publish.PerClientStats)
 
 		err := mqttload.RunPublish(cmd.Context(), connectClient, logger, publishOptions, progress, stats)
 		close(runFinished)
@@ -135,4 +135,5 @@ func registerPublishFlags(flags *pflag.FlagSet, publish *Publish) {
 	flags.IntVar(&publish.InFlight, "inflight", 1, "Maximum number of unacknowledged publishes at once per client (1..65535)")
 	flags.DurationVar(&publish.AckTimeout, "ack-timeout", 30*time.Second, "How long to wait for a publish to be acknowledged before it counts as timed out")
 	flags.IntVar(&publish.ConnectConcurrency, "connect-concurrency", 16, "Maximum number of clients connecting at the same time. At most --clients are used.")
+	flags.BoolVar(&publish.PerClientStats, "per-client-stats", false, "Add one entry per client to the report: client ID, acked count and ack latency")
 }

@@ -85,3 +85,43 @@ func TestBuildPublishReport(t *testing.T) {
 		t.Errorf("per-client rates = %+v, want all 10", rates)
 	}
 }
+
+// TestBuildPublishReportClients checks the per-client list with per-client stats on and off.
+func TestBuildPublishReportClients(t *testing.T) {
+	progress := NewPublishProgress(2)
+	options := PublishOptions{Clients: 2, InFlight: 4, QoS: 1, Size: 64}
+
+	startedAt := time.Now().Add(-10 * time.Second)
+	progress.publishStartedAt.set(startedAt)
+	progress.finishedAt.set(startedAt.Add(10 * time.Second))
+	progress.counterFor(0).acked.Add(7)
+	progress.counterFor(1).acked.Add(3)
+
+	statsOff := NewPublishStats(2, false)
+	if report := BuildPublishReport(progress, statsOff, options); report.Clients != nil {
+		t.Errorf("clients = %+v, want nil without per-client stats", report.Clients)
+	}
+
+	statsOn := NewPublishStats(2, true)
+	statsOn.clients[0].clientID = "client-a"
+	statsOn.clients[1].clientID = "client-b"
+	statsOn.clients[0].perClientLatency.record(1000)
+
+	report := BuildPublishReport(progress, statsOn, options)
+
+	if len(report.Clients) != 2 {
+		t.Fatalf("clients = %+v, want 2 entries", report.Clients)
+	}
+	if report.Clients[0].ClientID != "client-a" || report.Clients[0].Acked != 7 {
+		t.Errorf("client 0 = %+v", report.Clients[0])
+	}
+	if latency := report.Clients[0].AckLatencyMicroseconds; latency == nil || latency.Max < 1000 || latency.Mean < 1000 {
+		t.Errorf("client 0 latency = %+v, want values near 1000", latency)
+	}
+	if report.Clients[1].ClientID != "client-b" || report.Clients[1].Acked != 3 {
+		t.Errorf("client 1 = %+v", report.Clients[1])
+	}
+	if report.Clients[1].AckLatencyMicroseconds != nil {
+		t.Errorf("client 1 latency = %+v, want nil", report.Clients[1].AckLatencyMicroseconds)
+	}
+}

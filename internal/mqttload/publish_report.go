@@ -1,6 +1,7 @@
 package mqttload
 
 import (
+	"math"
 	"os"
 	"runtime"
 	"slices"
@@ -20,6 +21,7 @@ type PublishReport struct {
 	ConnectLatencyMicroseconds PublishReportConnectLatency      `json:"connectLatencyMicroseconds"`
 	InflightWait               PublishReportInflightWait        `json:"inflightWait"`
 	PerClientAckedPerSecond    PublishReportPerClientAckedRates `json:"perClientAckedPerSecond"`
+	Clients                    []PublishReportClient            `json:"clients,omitempty"`
 }
 
 type PublishReportRun struct {
@@ -112,6 +114,7 @@ func BuildPublishReport(progress *PublishProgress, stats *PublishStats, options 
 		ConnectLatencyMicroseconds: buildConnectLatency(stats),
 		InflightWait:               buildInflightWait(stats, elapsed),
 		PerClientAckedPerSecond:    buildPerClientRates(progress, stats, snapshot.PublishStartedAt),
+		Clients:                    buildClients(progress, stats),
 	}
 }
 
@@ -211,5 +214,54 @@ func buildPerClientRates(progress *PublishProgress, stats *PublishStats, started
 		Slowest: clientRates[0],
 		Median:  median,
 		Fastest: clientRates[len(clientRates)-1],
+	}
+}
+
+// PublishReportClient is one client's entry in the report, present only with per-client stats.
+type PublishReportClient struct {
+	ClientID               string                      `json:"clientId"`
+	Acked                  int64                       `json:"acked"`
+	AckLatencyMicroseconds *PublishReportClientLatency `json:"ackLatencyMicroseconds,omitempty"`
+}
+
+type PublishReportClientLatency struct {
+	Mean int64 `json:"mean"`
+	P50  int64 `json:"p50"`
+	P99  int64 `json:"p99"`
+	Max  int64 `json:"max"`
+}
+
+// buildClients returns nil when per-client stats were not asked for.
+func buildClients(progress *PublishProgress, stats *PublishStats) []PublishReportClient {
+	if len(stats.clients) == 0 || stats.clients[0].perClientLatency == nil {
+		return nil
+	}
+
+	clients := make([]PublishReportClient, len(stats.clients))
+	for i, client := range stats.clients {
+		clients[i] = PublishReportClient{
+			ClientID:               client.clientID,
+			Acked:                  progress.counterFor(i).acked.Load(),
+			AckLatencyMicroseconds: buildClientAckLatency(client),
+		}
+	}
+
+	return clients
+}
+
+// buildClientAckLatency returns nil when the client recorded no latency, which is the case at QoS 0.
+func buildClientAckLatency(client *clientStats) *PublishReportClientLatency {
+	histogram := hdrhistogram.New(1, latencyHighestMicroseconds, 2)
+	client.perClientLatency.addTo(histogram)
+
+	if histogram.TotalCount() == 0 {
+		return nil
+	}
+
+	return &PublishReportClientLatency{
+		Mean: int64(math.Round(histogram.Mean())),
+		P50:  histogram.ValueAtQuantile(50),
+		P99:  histogram.ValueAtQuantile(99),
+		Max:  histogram.Max(),
 	}
 }

@@ -7,6 +7,8 @@
 - `pub` writes a report as one JSON line on stdout when it finishes: message counts, acks per
   second, ack and connect latency percentiles, time spent waiting for in-flight slots, and the
   slowest, median and fastest client. See "Report" in the README.
+- `--per-client-stats` adds one entry per client to the `pub` report: client ID, acked count
+  and ack latency (mean, p50, p99, max).
 
 ## 2.0.0
 

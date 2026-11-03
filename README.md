@@ -124,6 +124,10 @@ The line is one object on one line. The example is split over several lines to f
   in-flight slot, from 0 to 1. A value near 1 means waiting for acks limits the rate.
 - `perClientAckedPerSecond`: acks per second of the slowest client, the median client and the
   fastest client.
+- `clients`: only with `--per-client-stats`. One entry per client, in client order, with
+  `clientId`, `acked` and `ackLatencyMicroseconds` (`mean`, `p50`, `p99`, `max`). The latency
+  is left out at QoS 0 and for a client with no acks. `mean` is worked out from the histogram, so it is
+  within about 1% of the true mean.
 
 Save the report to a file, with the logs still on the terminal:
 
@@ -135,6 +139,12 @@ Read one value with `jq`:
 
 ```bash
 jq '.ackLatencyMicroseconds.p99' report.json
+```
+
+List each client with its p99:
+
+```bash
+./bin/mqtt-load-generator pub -c 1000 -n 100 -h localhost --per-client-stats | jq '.clients[] | [.clientId, .ackLatencyMicroseconds.p99]'
 ```
 
 ### Subscribe (`sub`)

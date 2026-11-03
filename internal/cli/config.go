@@ -42,6 +42,7 @@ type Publish struct {
 	InFlight           int
 	AckTimeout         time.Duration
 	ConnectConcurrency int
+	PerClientStats     bool
 }
 
 // Subscribe holds the settings for the sub command.
