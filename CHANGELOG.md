@@ -9,6 +9,12 @@
   slowest, median and fastest client. See "Report" in the README.
 - `--per-client-stats` adds one entry per client to the `pub` report: client ID, acked count
   and ack latency (mean, p50, p99, max).
+- `sub` writes a report as one JSON line on stdout when it stops: messages and bytes received,
+  messages per second, and end-to-end latency percentiles with `--benchmark`. It is written
+  after Ctrl-C and SIGTERM too. See "Subscribe report" in the README.
+- `sub --count N`: stop after N messages and write the report. It can stop slightly above N.
+- `sub --benchmark`: read the timestamp from `pub --benchmark` payloads and measure end-to-end
+  latency in milliseconds. Needs the publisher's and subscriber's clocks in sync.
 
 ## 2.0.1
 

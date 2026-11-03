@@ -109,7 +109,7 @@ func BuildPublishReport(progress *PublishProgress, stats *PublishStats, options 
 			Failed:    snapshot.Failed,
 			TimedOut:  snapshot.TimedOut,
 		},
-		AcksPerInterval:            buildAcksPerInterval(stats, snapshot.Acked, elapsedSeconds),
+		AcksPerInterval:            buildAcksPerInterval(stats.ackedPerInterval, snapshot.Acked, elapsedSeconds),
 		AckLatencyMicroseconds:     buildAckLatency(stats),
 		ConnectLatencyMicroseconds: buildConnectLatency(stats),
 		InflightWait:               buildInflightWait(stats, elapsed),
@@ -118,8 +118,7 @@ func BuildPublishReport(progress *PublishProgress, stats *PublishStats, options 
 	}
 }
 
-func buildAcksPerInterval(stats *PublishStats, acked int64, elapsedSeconds float64) PublishReportAcksPerInterval {
-	values := stats.ackedPerInterval
+func buildAcksPerInterval(values []int64, acked int64, elapsedSeconds float64) PublishReportAcksPerInterval {
 	if values == nil {
 		values = []int64{}
 	}

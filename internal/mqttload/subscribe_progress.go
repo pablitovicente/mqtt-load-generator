@@ -20,6 +20,9 @@ type SubscribeSnapshot struct {
 	// when the subscribe never succeeds, so display can tell a run that actually started from
 	// one that never got going.
 	SubscribedAt time.Time
+
+	// FinishedAt is zero until the run is over.
+	FinishedAt time.Time
 }
 
 // SubscribeProgress is what RunSubscribe reports as it works, and what display reads on its own
@@ -34,6 +37,7 @@ type SubscribeProgress struct {
 	receivedBytes atomic.Int64
 	lastMessageAt atomicTime
 	subscribedAt  atomicTime
+	finishedAt    atomicTime
 
 	// done closes once the run is over: ctx was cancelled and the client disconnected.
 	done chan struct{}
@@ -69,6 +73,7 @@ func (progress *SubscribeProgress) recordSubscribed() {
 
 // finish marks the run as over.
 func (progress *SubscribeProgress) finish() {
+	progress.finishedAt.set(time.Now())
 	close(progress.done)
 }
 
@@ -79,5 +84,6 @@ func (progress *SubscribeProgress) Snapshot() SubscribeSnapshot {
 		ReceivedBytes: progress.receivedBytes.Load(),
 		LastMessageAt: progress.lastMessageAt.load(),
 		SubscribedAt:  progress.subscribedAt.load(),
+		FinishedAt:    progress.finishedAt.load(),
 	}
 }

@@ -156,6 +156,46 @@ List each client with its p99:
 With `--disable-bar`, counts are printed as log lines instead of a progress bar. Use it when
 the output is not a terminal, for example in a container or in CI.
 
+`--count N` stops after N messages and writes the report. It can stop slightly above N, because
+messages already on the way are still counted before the disconnect. Without `--count`, `sub`
+runs until Ctrl-C. Ctrl-C and SIGTERM (for example when Kubernetes stops the pod) also write
+the report, with what arrived until then. The report is not written when the subscribe failed.
+
+### Subscribe report
+
+`sub` writes one JSON line to stdout when it stops. Logs and the progress bar go to stderr.
+
+```json
+{"run":{"startedAt":"...","finishedAt":"...","elapsedSeconds":4.3,"host":"lab-01","gomaxprocs":16},
+ "settings":{"topic":"bench/#","qos":1,"count":500000},
+ "messages":{"received":500000,"bytes":256000000,"withoutTimestamp":0,"negativeLatency":0},
+ "receivedPerInterval":{"intervalSeconds":1,"average":116000,"lowest":93000,"highest":118000,"values":[93000,118000]},
+ "endToEndLatencyMilliseconds":{"p50":3,"p90":5,"p99":9,"p999":14,"max":20}}
+```
+
+- `run`: when the broker accepted the subscribe and when `sub` stopped, how long that was,
+  the host name and the number of CPUs Go uses.
+- `settings`: the topic, QoS and `--count` of the run (0 means no limit).
+- `messages`: messages and payload bytes received. `withoutTimestamp` and `negativeLatency`
+  are 0 without `--benchmark`.
+- `receivedPerInterval`: messages received per second, worked out like `acksPerInterval` in
+  the `pub` report.
+- `endToEndLatencyMilliseconds`: only with `--benchmark`. `p999` means p99.9.
+
+#### `--benchmark`
+
+`--benchmark` reads the timestamp from payloads sent by `pub --benchmark`, so it only makes
+sense when the publisher used `--benchmark` too. The latency is the time from the publisher's
+timestamp to the arrival at `sub`, in whole milliseconds, because the timestamp is in
+milliseconds.
+
+The publisher's and subscriber's clocks must be in sync, for example with NTP. Otherwise the
+latency is wrong.
+
+- `withoutTimestamp` counts messages with no readable timestamp.
+- `negativeLatency` counts messages whose timestamp is later than their arrival. It means the
+  subscriber's clock is behind the publisher's. These messages are left out of the latency.
+
 ### Dump (`dump`)
 
 Print every payload received on a topic, one per line:
@@ -307,8 +347,8 @@ With `--benchmark`, each payload is JSON instead of random bytes:
 
 `timestamp` is the publish time in Unix milliseconds. `padding` fills the payload up to
 `--size` bytes, and is empty when `--size` is below 50. The format does not change between
-versions, because some collectors read `timestamp` from it to measure latency. `sub` does not
-compute latency.
+versions, because some collectors read `timestamp` from it to measure latency. `sub --benchmark`
+reads it too.
 
 ## Docker
 

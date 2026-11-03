@@ -110,7 +110,7 @@ func newPublishRunFunction(connection *Connection, publish *Publish, connect con
 			return err
 		}
 
-		reportErr := display.WritePublishReport(cmd.OutOrStdout(), mqttload.BuildPublishReport(progress, stats, publishOptions))
+		reportErr := display.WriteReport(cmd.OutOrStdout(), mqttload.BuildPublishReport(progress, stats, publishOptions))
 		if err == nil {
 			return reportErr
 		}

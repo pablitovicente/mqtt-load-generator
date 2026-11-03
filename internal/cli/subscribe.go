@@ -60,6 +60,17 @@ func newSubscribeCommand(connection *Connection, connect connectFunc) *cobra.Com
 			err = mqttload.RunSubscribe(cmd.Context(), client, logger, connection.Topic, byte(connection.QoS), progress, stats, subscribe.Count)
 			<-displayStopped
 
+			// The report goes to stdout. It is skipped when the subscribe never succeeded.
+			if progress.Snapshot().SubscribedAt.IsZero() {
+				return err
+			}
+
+			report := mqttload.BuildSubscribeReport(progress, stats, connection.Topic, byte(connection.QoS), subscribe.Count)
+			reportErr := display.WriteReport(cmd.OutOrStdout(), report)
+			if err == nil {
+				return reportErr
+			}
+
 			return err
 		},
 
