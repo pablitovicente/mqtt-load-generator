@@ -61,14 +61,22 @@ type SubscribeReportLatency struct {
 // returned, and only when the subscribe succeeded (SubscribedAt in the snapshot is not zero).
 func BuildSubscribeReport(progress *SubscribeProgress, stats *SubscribeStats, topic string, qos byte, count int64) SubscribeReport {
 	snapshot := progress.Snapshot()
-	elapsedSeconds := snapshot.FinishedAt.Sub(snapshot.SubscribedAt).Seconds()
+
+	// The run starts at the first message, so time spent waiting for a publisher doesn't lower
+	// the rates. Without any message, it starts at the subscribe.
+	startedAt := snapshot.FirstMessageAt
+	if startedAt.IsZero() {
+		startedAt = snapshot.SubscribedAt
+	}
+
+	elapsedSeconds := snapshot.FinishedAt.Sub(startedAt).Seconds()
 
 	// os.Hostname returns an empty name on error, which is fine for the report.
 	hostName, _ := os.Hostname()
 
 	return SubscribeReport{
 		Run: SubscribeReportRun{
-			StartedAt:      snapshot.SubscribedAt,
+			StartedAt:      startedAt,
 			FinishedAt:     snapshot.FinishedAt,
 			ElapsedSeconds: elapsedSeconds,
 			Host:           hostName,

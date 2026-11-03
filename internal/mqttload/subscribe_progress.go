@@ -13,8 +13,9 @@ type SubscribeSnapshot struct {
 	// ReceivedBytes is the total size of all received payloads.
 	ReceivedBytes int64
 
-	// LastMessageAt is zero until the first message arrives.
-	LastMessageAt time.Time
+	// FirstMessageAt and LastMessageAt are zero until the first message arrives.
+	FirstMessageAt time.Time
+	LastMessageAt  time.Time
 
 	// SubscribedAt is zero until the broker acknowledges the subscribe request. It stays zero
 	// when the subscribe never succeeds, so display can tell a run that actually started from
@@ -33,11 +34,12 @@ type SubscribeSnapshot struct {
 // Received only ever increases. --reset-after used to reset it directly; now that is display
 // state (see display.RunSubscribeLog), so this always reports the true total for the run.
 type SubscribeProgress struct {
-	received      atomic.Int64
-	receivedBytes atomic.Int64
-	lastMessageAt atomicTime
-	subscribedAt  atomicTime
-	finishedAt    atomicTime
+	received       atomic.Int64
+	receivedBytes  atomic.Int64
+	firstMessageAt atomicTime
+	lastMessageAt  atomicTime
+	subscribedAt   atomicTime
+	finishedAt     atomicTime
 
 	// done closes once the run is over: ctx was cancelled and the client disconnected.
 	done chan struct{}
@@ -63,6 +65,11 @@ func (progress *SubscribeProgress) recordMessage(payloadSize int) (int64, time.T
 	progress.receivedBytes.Add(int64(payloadSize))
 	progress.lastMessageAt.set(now)
 
+	// Only one callback ever gets number 1.
+	if number == 1 {
+		progress.firstMessageAt.set(now)
+	}
+
 	return number, now
 }
 
@@ -80,10 +87,11 @@ func (progress *SubscribeProgress) finish() {
 // Snapshot returns a plain-value copy of the current progress.
 func (progress *SubscribeProgress) Snapshot() SubscribeSnapshot {
 	return SubscribeSnapshot{
-		Received:      progress.received.Load(),
-		ReceivedBytes: progress.receivedBytes.Load(),
-		LastMessageAt: progress.lastMessageAt.load(),
-		SubscribedAt:  progress.subscribedAt.load(),
-		FinishedAt:    progress.finishedAt.load(),
+		Received:       progress.received.Load(),
+		ReceivedBytes:  progress.receivedBytes.Load(),
+		FirstMessageAt: progress.firstMessageAt.load(),
+		LastMessageAt:  progress.lastMessageAt.load(),
+		SubscribedAt:   progress.subscribedAt.load(),
+		FinishedAt:     progress.finishedAt.load(),
 	}
 }

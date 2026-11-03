@@ -173,8 +173,10 @@ the report, with what arrived until then. The report is not written when the sub
  "endToEndLatencyMilliseconds":{"p50":3,"p90":5,"p99":9,"p999":14,"max":20}}
 ```
 
-- `run`: when the broker accepted the subscribe and when `sub` stopped, how long that was,
-  the host name and the number of CPUs Go uses.
+- `run`: when the first message arrived and when `sub` stopped, how long that was, the host
+  name and the number of CPUs Go uses. Time spent waiting for a publisher before the first
+  message is not counted, so it doesn't lower the rates. Without any message, the run starts
+  when the broker accepted the subscribe.
 - `settings`: the topic, QoS and `--count` of the run (0 means no limit).
 - `messages`: messages and payload bytes received. `withoutTimestamp` and `negativeLatency`
   are 0 without `--benchmark`.

@@ -46,6 +46,16 @@ func TestBuildSubscribeReport(t *testing.T) {
 		t.Errorf("run = %+v", report.Run)
 	}
 
+	// Once a message has arrived, the run starts at the first message instead of the subscribe.
+	firstMessageAt := startedAt.Add(2 * time.Second)
+	progress.firstMessageAt.set(firstMessageAt)
+
+	firstMessageReport := BuildSubscribeReport(progress, stats, "bench/#", 1, 500)
+	if firstMessageReport.Run.ElapsedSeconds != 8 || !firstMessageReport.Run.StartedAt.Equal(firstMessageAt) {
+		t.Errorf("run with a first message = %+v", firstMessageReport.Run)
+	}
+	progress.firstMessageAt.nano.Store(0) // back to "no message yet" for the checks below
+
 	interval := report.ReceivedPerInterval
 	if interval.IntervalSeconds != 1 || interval.Average != 15 || interval.Lowest != 20 || interval.Highest != 80 || len(interval.Values) != 3 {
 		t.Errorf("receivedPerInterval = %+v", interval)

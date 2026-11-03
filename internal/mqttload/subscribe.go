@@ -49,6 +49,7 @@ func RunSubscribe(
 	defer progress.finish()
 	defer client.Disconnect(maxWaitForQueuedSends)
 
+	firstMessageArrived := make(chan struct{})
 	countReached := make(chan struct{})
 
 	if err := subscribeAndWait(client, topic, qos, func(_ string, payload []byte) {
@@ -59,7 +60,11 @@ func RunSubscribe(
 		}
 
 		// The received counter hands out each number once, so exactly one callback sees
-		// number == count and a plain close is safe.
+		// number 1, and exactly one sees number == count. A plain close is safe for both.
+		if number == 1 {
+			close(firstMessageArrived)
+		}
+
 		if count > 0 && number == count {
 			close(countReached)
 		}
@@ -70,12 +75,20 @@ func RunSubscribe(
 	progress.recordSubscribed()
 	logger.Info("subscribed", "topic", topic, "qos", qos)
 
-	// The sampler stops when the run ends. Wait for it before returning, so
+	// The sampler starts at the first message, so seconds spent waiting for a publisher are not
+	// counted, and stops when the run ends. Wait for it before returning, so
 	// stats.receivedPerInterval is safe to read once RunSubscribe returns.
 	runOver := make(chan struct{})
 	samplerStopped := make(chan struct{})
 	go func() {
 		defer close(samplerStopped)
+
+		select {
+		case <-firstMessageArrived:
+		case <-runOver:
+			return
+		}
+
 		stats.receivedPerInterval = sampleTotal(func() int64 { return progress.Snapshot().Received }, runOver, ackSampleInterval)
 	}()
 
