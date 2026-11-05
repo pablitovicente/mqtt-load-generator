@@ -29,9 +29,10 @@ const subscribeTimeout = 10 * time.Second
 const maxWaitForQueuedSends = 250 * time.Millisecond
 
 // RunSubscribe subscribes to topic at the given QoS and records what it receives in progress
-// until ctx is cancelled. Ctrl-C is the normal way to stop it: cancelling ctx is not an error.
-// However it returns, including when the subscribe fails, RunSubscribe disconnects the client
-// and marks progress as done.
+// and stats until ctx is cancelled, or until count messages have arrived (count 0 means no
+// limit). Ctrl-C is the normal way to stop it: cancelling ctx is not an error. However it
+// returns, including when the subscribe fails, RunSubscribe disconnects the client and marks
+// progress as done.
 func RunSubscribe(
 	ctx context.Context,
 	client Subscriber,
@@ -39,6 +40,8 @@ func RunSubscribe(
 	topic string,
 	qos byte,
 	progress *SubscribeProgress,
+	stats *SubscribeStats,
+	count int64,
 ) error {
 	// The display waits for progress.Done() before the command can return, so progress must be
 	// finished on every return path. Deferred calls run last-in first-out: Disconnect first,
@@ -46,8 +49,25 @@ func RunSubscribe(
 	defer progress.finish()
 	defer client.Disconnect(maxWaitForQueuedSends)
 
-	if err := subscribeAndWait(client, topic, qos, func(_ string, _ []byte) {
-		progress.recordMessage()
+	firstMessageArrived := make(chan struct{})
+	countReached := make(chan struct{})
+
+	if err := subscribeAndWait(client, topic, qos, func(_ string, payload []byte) {
+		number, now := progress.recordMessage(len(payload))
+
+		if stats.benchmark {
+			recordLatency(stats, number, now, payload)
+		}
+
+		// The received counter hands out each number once, so exactly one callback sees
+		// number 1, and exactly one sees number == count. A plain close is safe for both.
+		if number == 1 {
+			close(firstMessageArrived)
+		}
+
+		if count > 0 && number == count {
+			close(countReached)
+		}
 	}); err != nil {
 		return err
 	}
@@ -55,9 +75,53 @@ func RunSubscribe(
 	progress.recordSubscribed()
 	logger.Info("subscribed", "topic", topic, "qos", qos)
 
-	<-ctx.Done()
+	// The sampler starts at the first message, so seconds spent waiting for a publisher are not
+	// counted, and stops when the run ends. Wait for it before returning, so
+	// stats.receivedPerInterval is safe to read once RunSubscribe returns.
+	runOver := make(chan struct{})
+	samplerStopped := make(chan struct{})
+	go func() {
+		defer close(samplerStopped)
+
+		select {
+		case <-firstMessageArrived:
+		case <-runOver:
+			return
+		}
+
+		stats.receivedPerInterval = sampleTotal(func() int64 { return progress.Snapshot().Received }, runOver, ackSampleInterval)
+	}()
+
+	select {
+	case <-ctx.Done():
+	case <-countReached:
+	}
+
+	// The run ends here, before the deferred Disconnect, so its time is not in the report.
+	progress.recordStopped()
+
+	close(runOver)
+	<-samplerStopped
 
 	return nil
+}
+
+// recordLatency works out how long a benchmark message took to arrive and counts it. The
+// latency is in milliseconds, since that is what the payload timestamp holds.
+func recordLatency(stats *SubscribeStats, number int64, arrivedAt time.Time, payload []byte) {
+	timestamp, ok := benchmarkTimestamp(payload)
+	if !ok {
+		stats.withoutTimestamp.Add(1)
+		return
+	}
+
+	latencyMilliseconds := arrivedAt.UnixMilli() - timestamp
+	if latencyMilliseconds < 0 {
+		stats.negativeLatency.Add(1)
+		return
+	}
+
+	stats.latency.forClient(int(number)).record(latencyMilliseconds)
 }
 
 // subscribeAndWait subscribes to topic at qos with callback, and waits for the broker to

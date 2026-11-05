@@ -10,13 +10,20 @@ import (
 type SubscribeSnapshot struct {
 	Received int64
 
-	// LastMessageAt is zero until the first message arrives.
-	LastMessageAt time.Time
+	// ReceivedBytes is the total size of all received payloads.
+	ReceivedBytes int64
+
+	// FirstMessageAt and LastMessageAt are zero until the first message arrives.
+	FirstMessageAt time.Time
+	LastMessageAt  time.Time
 
 	// SubscribedAt is zero until the broker acknowledges the subscribe request. It stays zero
 	// when the subscribe never succeeds, so display can tell a run that actually started from
 	// one that never got going.
 	SubscribedAt time.Time
+
+	// FinishedAt is zero until the run is over.
+	FinishedAt time.Time
 }
 
 // SubscribeProgress is what RunSubscribe reports as it works, and what display reads on its own
@@ -27,9 +34,12 @@ type SubscribeSnapshot struct {
 // Received only ever increases. --reset-after used to reset it directly; now that is display
 // state (see display.RunSubscribeLog), so this always reports the true total for the run.
 type SubscribeProgress struct {
-	received      atomic.Int64
-	lastMessageAt atomicTime
-	subscribedAt  atomicTime
+	received       atomic.Int64
+	receivedBytes  atomic.Int64
+	firstMessageAt atomicTime
+	lastMessageAt  atomicTime
+	subscribedAt   atomicTime
+	finishedAt     atomicTime
 
 	// done closes once the run is over: ctx was cancelled and the client disconnected.
 	done chan struct{}
@@ -45,10 +55,22 @@ func (progress *SubscribeProgress) Done() <-chan struct{} {
 	return progress.done
 }
 
-// recordMessage records that one message was received, now.
-func (progress *SubscribeProgress) recordMessage() {
-	progress.received.Add(1)
-	progress.lastMessageAt.set(time.Now())
+// recordMessage records that one message of payloadSize bytes was received, now. It returns
+// the number of messages received so far (this one included) and the time it recorded, so the
+// caller can use both without another clock read.
+func (progress *SubscribeProgress) recordMessage(payloadSize int) (int64, time.Time) {
+	now := time.Now()
+
+	number := progress.received.Add(1)
+	progress.receivedBytes.Add(int64(payloadSize))
+	progress.lastMessageAt.set(now)
+
+	// Only one callback ever gets number 1.
+	if number == 1 {
+		progress.firstMessageAt.set(now)
+	}
+
+	return number, now
 }
 
 // recordSubscribed records that the broker acknowledged the subscribe request, now.
@@ -56,16 +78,28 @@ func (progress *SubscribeProgress) recordSubscribed() {
 	progress.subscribedAt.set(time.Now())
 }
 
-// finish marks the run as over.
+// recordStopped records that the run stopped, now: --count was reached or ctx was cancelled.
+func (progress *SubscribeProgress) recordStopped() {
+	progress.finishedAt.set(time.Now())
+}
+
+// finish marks the run as over. When the run never got to recordStopped (the subscribe
+// failed), it sets the end time itself.
 func (progress *SubscribeProgress) finish() {
+	if progress.finishedAt.load().IsZero() {
+		progress.finishedAt.set(time.Now())
+	}
 	close(progress.done)
 }
 
 // Snapshot returns a plain-value copy of the current progress.
 func (progress *SubscribeProgress) Snapshot() SubscribeSnapshot {
 	return SubscribeSnapshot{
-		Received:      progress.received.Load(),
-		LastMessageAt: progress.lastMessageAt.load(),
-		SubscribedAt:  progress.subscribedAt.load(),
+		Received:       progress.received.Load(),
+		ReceivedBytes:  progress.receivedBytes.Load(),
+		FirstMessageAt: progress.firstMessageAt.load(),
+		LastMessageAt:  progress.lastMessageAt.load(),
+		SubscribedAt:   progress.subscribedAt.load(),
+		FinishedAt:     progress.finishedAt.load(),
 	}
 }

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.1.0
+
+### New
+
+- `pub` writes a report as one JSON line on stdout when it finishes: message counts, acks per
+  second, ack and connect latency percentiles, time spent waiting for in-flight slots, and the
+  slowest, median and fastest client. See "Report" in the README.
+- `--per-client-stats` adds one entry per client to the `pub` report: client ID, acked count
+  and ack latency (mean, p50, p99, max).
+- `sub` writes a report as one JSON line on stdout when it stops: messages and bytes received,
+  messages per second, and end-to-end latency percentiles with `--benchmark`. It is written
+  after Ctrl-C and SIGTERM too. See "Subscribe report" in the README.
+- `sub --count N`: stop after N messages and write the report. It can stop slightly above N.
+- `sub --benchmark`: read the timestamp from `pub --benchmark` payloads and measure end-to-end
+  latency in milliseconds. Needs the publisher's and subscriber's clocks in sync.
+
+## 2.0.1
+
+### Bugs fixed
+
+- The module path now ends in `/v2`, as Go requires for v2 and later. Without it, `go install`
+  and `go get` could not fetch any 2.x version.
+
 ## 2.0.0
 
 The CLI moved to Cobra: one binary, `mqtt-load-generator`, with the subcommands `pub`, `sub`

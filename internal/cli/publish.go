@@ -98,9 +98,22 @@ func newPublishRunFunction(connection *Connection, publish *Publish, connect con
 			}
 		}()
 
-		err := mqttload.RunPublish(cmd.Context(), connectClient, logger, publishOptions, progress)
+		stats := mqttload.NewPublishStats(publish.Clients, publish.PerClientStats)
+
+		err := mqttload.RunPublish(cmd.Context(), connectClient, logger, publishOptions, progress, stats)
 		close(runFinished)
 		<-displayStopped
+
+		// The report goes to stdout, even when some publishes failed. It is skipped only when
+		// publishing never started.
+		if progress.Snapshot().ConnectFailed {
+			return err
+		}
+
+		reportErr := display.WriteReport(cmd.OutOrStdout(), mqttload.BuildPublishReport(progress, stats, publishOptions))
+		if err == nil {
+			return reportErr
+		}
 
 		return err
 	}
@@ -122,4 +135,5 @@ func registerPublishFlags(flags *pflag.FlagSet, publish *Publish) {
 	flags.IntVar(&publish.InFlight, "inflight", 1, "Maximum number of unacknowledged publishes at once per client (1..65535)")
 	flags.DurationVar(&publish.AckTimeout, "ack-timeout", 30*time.Second, "How long to wait for a publish to be acknowledged before it counts as timed out")
 	flags.IntVar(&publish.ConnectConcurrency, "connect-concurrency", 16, "Maximum number of clients connecting at the same time. At most --clients are used.")
+	flags.BoolVar(&publish.PerClientStats, "per-client-stats", false, "Add one entry per client to the report: client ID, acked count and ack latency")
 }

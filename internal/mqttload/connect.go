@@ -14,6 +14,7 @@ import (
 type Publisher interface {
 	Publish(topic string, qos byte, retained bool, payload []byte) broker.Token
 	Disconnect(maxWaitForQueuedSends time.Duration)
+	ClientID() string
 }
 
 // connectClientFunc connects one client, numbered 1..N. cli builds it from the parsed
@@ -22,13 +23,14 @@ type Publisher interface {
 type connectClientFunc func(ctx context.Context, clientNumber int) (Publisher, error)
 
 // connectClients connects clientCount clients in parallel, at most connectConcurrency at a
-// time, and records each one as it connects on progress, for display to show. Publishing only
-// starts once every client has connected, as the README promises.
+// time, and records each one as it connects on progress, for display to show. It also stores
+// each client's connect time and client ID in stats. Publishing only starts once every client
+// has connected, as the README promises.
 //
 // If any connect fails, or ctx is cancelled first, connectClients stops starting new connects,
 // waits for the ones already running to finish, disconnects every client that did connect, and
 // returns the error (the connect failure, or ctx's error).
-func connectClients(ctx context.Context, connect connectClientFunc, clientCount, connectConcurrency int, progress *PublishProgress) ([]Publisher, error) {
+func connectClients(ctx context.Context, connect connectClientFunc, clientCount, connectConcurrency int, progress *PublishProgress, stats *PublishStats) ([]Publisher, error) {
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.SetLimit(connectConcurrency)
 
@@ -43,10 +45,16 @@ func connectClients(ctx context.Context, connect connectClientFunc, clientCount,
 				return err
 			}
 
+			connectStartedAt := time.Now()
+
 			client, err := connect(groupCtx, clientNumber)
 			if err != nil {
 				return err
 			}
+
+			connectedStats := stats.clients[clientNumber-1]
+			connectedStats.connectDuration = time.Since(connectStartedAt)
+			connectedStats.clientID = client.ClientID()
 
 			clients[clientNumber-1] = client
 			progress.clientConnected()

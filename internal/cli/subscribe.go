@@ -41,6 +41,7 @@ func newSubscribeCommand(connection *Connection, connect connectFunc) *cobra.Com
 			}
 
 			progress := mqttload.NewSubscribeProgress()
+			stats := mqttload.NewSubscribeStats(subscribe.Benchmark)
 			resetAfter := time.Duration(subscribe.ResetAfter * float64(time.Second))
 
 			// display runs on its own goroutine, reading progress on its own timer. We wait for
@@ -56,8 +57,19 @@ func newSubscribeCommand(connection *Connection, connect connectFunc) *cobra.Com
 				}
 			}()
 
-			err = mqttload.RunSubscribe(cmd.Context(), client, logger, connection.Topic, byte(connection.QoS), progress)
+			err = mqttload.RunSubscribe(cmd.Context(), client, logger, connection.Topic, byte(connection.QoS), progress, stats, subscribe.Count)
 			<-displayStopped
+
+			// The report goes to stdout. It is skipped when the subscribe never succeeded.
+			if progress.Snapshot().SubscribedAt.IsZero() {
+				return err
+			}
+
+			report := mqttload.BuildSubscribeReport(progress, stats, connection.Topic, byte(connection.QoS), subscribe.Count)
+			reportErr := display.WriteReport(cmd.OutOrStdout(), report)
+			if err == nil {
+				return reportErr
+			}
 
 			return err
 		},
@@ -77,4 +89,7 @@ func registerSubscribeFlags(flags *pflag.FlagSet, subscribe *Subscribe) {
 
 	// Off by default: counting doesn't care about order, and unordered is faster.
 	flags.BoolVar(&subscribe.Ordered, "ordered", false, orderedHelp)
+
+	flags.Int64Var(&subscribe.Count, "count", 0, "Stop after this many messages and write the report. 0 means no limit")
+	flags.BoolVar(&subscribe.Benchmark, "benchmark", false, "Read the timestamp from --benchmark payloads sent by pub --benchmark and measure end-to-end latency. Needs the publisher's and subscriber's clocks in sync")
 }

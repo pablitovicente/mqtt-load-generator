@@ -3,11 +3,14 @@ package mqttload
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/HdrHistogram/hdrhistogram-go"
 
 	"github.com/pablitovicente/mqtt-load-generator/v2/internal/broker"
 )
@@ -67,7 +70,7 @@ func TestRunClientPublish_NeverMoreThanInFlightOutstanding(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runClientPublish(context.Background(), client, 1, options, counters)
+		runClientPublish(context.Background(), client, 1, options, counters, &clientStats{sharedLatency: &latencyBuckets{}})
 		close(done)
 	}()
 
@@ -135,7 +138,7 @@ func TestRunClientPublish_CountsAckedFailedAndTimedOut(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runClientPublish(context.Background(), client, 1, options, counters)
+		runClientPublish(context.Background(), client, 1, options, counters, &clientStats{sharedLatency: &latencyBuckets{}})
 		close(done)
 	}()
 
@@ -186,7 +189,7 @@ func TestRunPublish_TopicQoSAndSuffix(t *testing.T) {
 		InFlight: 1, AckTimeout: time.Second, ConnectConcurrency: clientCount,
 	}
 
-	if err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients)); err != nil {
+	if err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients), NewPublishStats(options.Clients, false)); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -253,7 +256,7 @@ func TestRunPublish_CtxCancelStopsEarlyAndDrains(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- RunPublish(ctx, connect, discardLogger(), options, progress)
+		done <- RunPublish(ctx, connect, discardLogger(), options, progress, NewPublishStats(options.Clients, false))
 	}()
 
 	waitFor(t, time.Second, func() bool { return len(client.publishCalls()) >= 3 })
@@ -302,7 +305,7 @@ func TestRunPublish_ExitCode(t *testing.T) {
 		options.Count = 5
 		options.AckTimeout = time.Second
 
-		if err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients)); err != nil {
+		if err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients), NewPublishStats(options.Clients, false)); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 	})
@@ -317,7 +320,7 @@ func TestRunPublish_ExitCode(t *testing.T) {
 		options.Count = 3
 		options.AckTimeout = time.Second
 
-		err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients))
+		err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients), NewPublishStats(options.Clients, false))
 		if err == nil {
 			t.Fatal("expected an error, got none")
 		}
@@ -336,7 +339,7 @@ func TestRunPublish_ExitCode(t *testing.T) {
 		options.Count = 2
 		options.AckTimeout = 10 * time.Millisecond
 
-		err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients))
+		err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients), NewPublishStats(options.Clients, false))
 		if err == nil {
 			t.Fatal("expected an error, got none")
 		}
@@ -357,7 +360,7 @@ func TestRunPublish_ConnectFailureReturnsError(t *testing.T) {
 		Clients: 1, InFlight: 1, AckTimeout: time.Second, ConnectConcurrency: 1,
 	}
 
-	err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients))
+	err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(options.Clients), NewPublishStats(options.Clients, false))
 	if !errors.Is(err, wantErr) {
 		t.Errorf("expected error to wrap %v, got %v", wantErr, err)
 	}
@@ -381,7 +384,7 @@ func TestRunPublish_CancelDuringConnectIsNotAnError(t *testing.T) {
 		Clients: 1, InFlight: 1, AckTimeout: time.Second, ConnectConcurrency: 1,
 	}
 
-	if err := RunPublish(ctx, connect, discardLogger(), options, NewPublishProgress(options.Clients)); err != nil {
+	if err := RunPublish(ctx, connect, discardLogger(), options, NewPublishProgress(options.Clients), NewPublishStats(options.Clients, false)); err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
 }
@@ -399,11 +402,82 @@ func TestRunPublish_NoWaitAfterLastMessage(t *testing.T) {
 	}
 
 	startedAt := time.Now()
-	if err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(1)); err != nil {
+	if err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(1), NewPublishStats(options.Clients, false)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if elapsed := time.Since(startedAt); elapsed >= 250*time.Millisecond {
 		t.Errorf("one message with -i 500 took %v; it should not wait after the last message", elapsed)
+	}
+}
+
+// TestRunPublish_CollectsStats checks that at QoS 1 every ack lands in the shared latency
+// counters and in the client's own counters, and that connect time, finish time and client ID
+// are stored for every client.
+func TestRunPublish_CollectsStats(t *testing.T) {
+	const clientCount = 3
+	const count = 5
+
+	connect := func(_ context.Context, clientNumber int) (Publisher, error) {
+		return &fakePublisher{clientID: fmt.Sprintf("client-%d", clientNumber)}, nil
+	}
+
+	options := PublishOptions{
+		Topic: "load/test", QoS: 1, Count: count, Size: 8,
+		Schedule: "flat", Clients: clientCount,
+		InFlight: 2, AckTimeout: time.Second, ConnectConcurrency: clientCount,
+	}
+	stats := NewPublishStats(clientCount, true)
+
+	if err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(clientCount), stats); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	sharedHistogram := hdrhistogram.New(1, latencyHighestMicroseconds, 2)
+	stats.latency.addTo(sharedHistogram)
+	if got := sharedHistogram.TotalCount(); got != clientCount*count {
+		t.Errorf("shared latency holds %d values, want %d", got, clientCount*count)
+	}
+
+	for i, clientStats := range stats.clients {
+		clientHistogram := hdrhistogram.New(1, latencyHighestMicroseconds, 2)
+		clientStats.perClientLatency.addTo(clientHistogram)
+		if got := clientHistogram.TotalCount(); got != count {
+			t.Errorf("client %d: latency holds %d values, want %d", i, got, count)
+		}
+
+		if want := fmt.Sprintf("client-%d", i+1); clientStats.clientID != want {
+			t.Errorf("client %d: clientID = %q, want %q", i, clientStats.clientID, want)
+		}
+		if clientStats.connectDuration <= 0 {
+			t.Errorf("client %d: connectDuration was not set", i)
+		}
+		if clientStats.finishedAt.IsZero() {
+			t.Errorf("client %d: finishedAt was not set", i)
+		}
+	}
+}
+
+// TestRunPublish_NoLatencyAtQoS0 checks that nothing is recorded at QoS 0, where there is no
+// broker ack to time.
+func TestRunPublish_NoLatencyAtQoS0(t *testing.T) {
+	connect := func(_ context.Context, _ int) (Publisher, error) { return &fakePublisher{}, nil }
+
+	options := PublishOptions{
+		Topic: "load/test", QoS: 0, Count: 5, Size: 8,
+		Schedule: "flat", Clients: 1,
+		InFlight: 1, AckTimeout: time.Second, ConnectConcurrency: 1,
+	}
+	stats := NewPublishStats(1, true)
+
+	if err := RunPublish(context.Background(), connect, discardLogger(), options, NewPublishProgress(1), stats); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	histogram := hdrhistogram.New(1, latencyHighestMicroseconds, 2)
+	stats.latency.addTo(histogram)
+	stats.clients[0].perClientLatency.addTo(histogram)
+	if got := histogram.TotalCount(); got != 0 {
+		t.Errorf("latency holds %d values at QoS 0, want 0", got)
 	}
 }

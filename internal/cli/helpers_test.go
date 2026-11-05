@@ -126,6 +126,10 @@ func (client *fakeConnectedClient) Publish(topic string, qos byte, _ bool, paylo
 	return succeededToken{}
 }
 
+func (client *fakeConnectedClient) ClientID() string {
+	return client.clientID
+}
+
 func (client *fakeConnectedClient) Disconnect(_ time.Duration) {
 	client.connector.mutex.Lock()
 	client.connector.disconnects++
