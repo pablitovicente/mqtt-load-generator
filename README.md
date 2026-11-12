@@ -431,7 +431,7 @@ change. 1.x releases remain available.
 
 ## TODO
 
-- Detailed statistics per client and in total
+- Support custom payloads
 
 ## Contributors
 
