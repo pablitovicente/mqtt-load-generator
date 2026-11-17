@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -45,6 +46,15 @@ func newPublishRunFunction(connection *Connection, publish *Publish, connect con
 			return err
 		}
 
+		var templatePayload []byte
+		if publish.JSONTemplate != "" {
+			payload, err := renderJSONTemplate(cmd, publish)
+			if err != nil {
+				return err
+			}
+			templatePayload = payload
+		}
+
 		logger := newLogger(connection.LogLevel, cmd.ErrOrStderr())
 		brokerOptions := connection.toBrokerOptions()
 
@@ -66,6 +76,7 @@ func newPublishRunFunction(connection *Connection, publish *Publish, connect con
 			Clients:              publish.Clients,
 			Suffix:               publish.Suffix,
 			Benchmark:            publish.Benchmark,
+			TemplatePayload:      templatePayload,
 			InFlight:             publish.InFlight,
 			AckTimeout:           publish.AckTimeout,
 			ConnectConcurrency:   publish.ConnectConcurrency,
@@ -136,4 +147,32 @@ func registerPublishFlags(flags *pflag.FlagSet, publish *Publish) {
 	flags.DurationVar(&publish.AckTimeout, "ack-timeout", 30*time.Second, "How long to wait for a publish to be acknowledged before it counts as timed out")
 	flags.IntVar(&publish.ConnectConcurrency, "connect-concurrency", 16, "Maximum number of clients connecting at the same time. At most --clients are used.")
 	flags.BoolVar(&publish.PerClientStats, "per-client-stats", false, "Add one entry per client to the report: client ID, acked count and ack latency")
+	flags.StringVar(&publish.JSONTemplate, "json-template", "", "File with a JSON payload written as a Go template calling gofakeit functions, e.g. {\"name\": \"{{FirstName}}\"}. "+
+		"Rendered once at startup; every message sends the result")
+}
+
+// renderJSONTemplate reads and renders the --json-template file once, before any client
+// connects, so a broken template stops the run straight away.
+func renderJSONTemplate(cmd *cobra.Command, publish *Publish) ([]byte, error) {
+	if cmd.Flags().Changed("size") {
+		return nil, fmt.Errorf("when using a template the size can't be specified")
+	}
+
+	templateText, err := os.ReadFile(publish.JSONTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("reading --json-template: %w", err)
+	}
+
+	payload, err := mqttload.RenderJSONTemplate(string(templateText))
+	if err != nil {
+		return nil, fmt.Errorf("--json-template %s: %w", publish.JSONTemplate, err)
+	}
+
+	if publish.Benchmark {
+		if err := mqttload.CheckJSONTemplateForBenchmark(payload); err != nil {
+			return nil, fmt.Errorf("--json-template %s: %w", publish.JSONTemplate, err)
+		}
+	}
+
+	return payload, nil
 }

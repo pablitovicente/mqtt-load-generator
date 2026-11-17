@@ -14,7 +14,7 @@ func TestBenchmarkTimestamp(t *testing.T) {
 	}{
 		{"valid, comma after digits", []byte(`{"timestamp":1790288219472,"padding":"xx"}`), 1790288219472, true},
 		{"valid, brace after digits", []byte(`{"timestamp":42}`), 42, true},
-		{"from the pub generator", newPayloadGenerator(100, true)(), 0, true},
+		{"from the pub generator", newPayloadGenerator(100, true, nil)(), 0, true},
 		{"missing prefix", []byte(`{"time":123,"padding":""}`), 0, false},
 		{"empty payload", nil, 0, false},
 		{"no digits", []byte(`{"timestamp":,"padding":""}`), 0, false},

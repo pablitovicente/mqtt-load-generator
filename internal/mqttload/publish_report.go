@@ -101,7 +101,7 @@ func BuildPublishReport(progress *PublishProgress, stats *PublishStats, options 
 			Clients:      options.Clients,
 			InFlight:     options.InFlight,
 			QoS:          options.QoS,
-			PayloadBytes: options.Size,
+			PayloadBytes: reportedPayloadBytes(options),
 		},
 		Messages: PublishReportMessages{
 			Published: snapshot.Published,
@@ -116,6 +116,17 @@ func BuildPublishReport(progress *PublishProgress, stats *PublishStats, options 
 		PerClientAckedPerSecond:    buildPerClientRates(progress, stats, snapshot.PublishStartedAt),
 		Clients:                    buildClients(progress, stats),
 	}
+}
+
+// reportedPayloadBytes returns the payload size for the report: --size, or with
+// --json-template the size of the payload actually sent (one is built to measure it, since
+// --benchmark adds the timestamp).
+func reportedPayloadBytes(options PublishOptions) int {
+	if options.TemplatePayload == nil {
+		return options.Size
+	}
+
+	return len(newPayloadGenerator(options.Size, options.Benchmark, options.TemplatePayload)())
 }
 
 func buildAcksPerInterval(values []int64, acked int64, elapsedSeconds float64) PublishReportAcksPerInterval {

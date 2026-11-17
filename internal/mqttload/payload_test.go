@@ -13,7 +13,7 @@ func TestStaticPayloadGenerator_ExactSize(t *testing.T) {
 
 	for _, size := range tests {
 		t.Run(fmt.Sprintf("size %d", size), func(t *testing.T) {
-			generate := newPayloadGenerator(size, false)
+			generate := newPayloadGenerator(size, false, nil)
 
 			payload := generate()
 			if len(payload) != size {
@@ -26,7 +26,7 @@ func TestStaticPayloadGenerator_ExactSize(t *testing.T) {
 // TestStaticPayloadGenerator_ReusesSamePayload checks that the default payload is built once
 // and reused for every message, like v1, instead of being regenerated each call.
 func TestStaticPayloadGenerator_ReusesSamePayload(t *testing.T) {
-	generate := newPayloadGenerator(64, false)
+	generate := newPayloadGenerator(64, false, nil)
 
 	first := generate()
 	second := generate()
@@ -115,6 +115,63 @@ func TestBenchmarkPayloadGenerator_SizeBelow50ClampsToEmptyPadding(t *testing.T)
 
 			if decoded.Padding != "" {
 				t.Errorf("expected empty padding for size %d, got %q", size, decoded.Padding)
+			}
+		})
+	}
+}
+
+func TestTemplatePayloadGenerator_SendsTheRenderedPayload(t *testing.T) {
+	rendered := []byte(`{"name":"Halle"}`)
+	generate := newPayloadGenerator(100, false, rendered)
+
+	if got := generate(); string(got) != string(rendered) {
+		t.Errorf("payload = %s, want %s", got, rendered)
+	}
+}
+
+// TestTemplatePayloadGenerator_WithBenchmark checks that --benchmark puts the timestamp first,
+// exactly as sub --benchmark expects, and that the result is still valid JSON with the
+// template's fields.
+func TestTemplatePayloadGenerator_WithBenchmark(t *testing.T) {
+	tests := []struct {
+		name     string
+		rendered string
+		wantName string
+	}{
+		{"object", `{"name":"Halle"}`, "Halle"},
+		{"object with spaces and line breaks", "  {\n  \"name\": \"Halle\"\n}\n", "Halle"},
+		{"empty object", `{}`, ""},
+		{"empty object with spaces", `{ }`, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := time.Now().UnixMilli()
+			payload := newPayloadGenerator(100, true, []byte(tt.rendered))()
+			after := time.Now().UnixMilli()
+
+			if !strings.HasPrefix(string(payload), `{"timestamp":`) {
+				t.Errorf("payload must start with {\"timestamp\":, got %s", payload)
+			}
+
+			var decoded struct {
+				Timestamp int64  `json:"timestamp"`
+				Name      string `json:"name"`
+			}
+			if err := json.Unmarshal(payload, &decoded); err != nil {
+				t.Fatalf("payload is not valid JSON: %v, payload: %s", err, payload)
+			}
+
+			if decoded.Timestamp < before || decoded.Timestamp > after {
+				t.Errorf("timestamp %d not within [%d, %d]", decoded.Timestamp, before, after)
+			}
+			if decoded.Name != tt.wantName {
+				t.Errorf("name = %q, want %q", decoded.Name, tt.wantName)
+			}
+
+			timestamp, ok := benchmarkTimestamp(payload)
+			if !ok || timestamp != decoded.Timestamp {
+				t.Errorf("sub --benchmark reads (%d, %v), want (%d, true)", timestamp, ok, decoded.Timestamp)
 			}
 		})
 	}
