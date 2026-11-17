@@ -1,6 +1,7 @@
 package mqttload
 
 import (
+	"bytes"
 	"crypto/rand"
 	"strconv"
 	"strings"
@@ -10,13 +11,23 @@ import (
 // payloadGenerator returns the next payload to publish.
 type payloadGenerator func() []byte
 
-// newPayloadGenerator builds the payload generator for one client, following --size and
-// --benchmark.
-func newPayloadGenerator(size int, benchmark bool) payloadGenerator {
-	if benchmark {
+// newPayloadGenerator builds the payload generator for one client, following --size,
+// --benchmark and the payload rendered from --json-template (nil without it).
+func newPayloadGenerator(size int, benchmark bool, templatePayload []byte) payloadGenerator {
+	switch {
+	case templatePayload != nil && benchmark:
+		return timestampPayloadGenerator(afterTimestamp(templatePayload))
+	case templatePayload != nil:
+		// Nothing ever writes to these bytes, so every message can send the same slice, like
+		// the static payload.
+		return func() []byte {
+			return templatePayload
+		}
+	case benchmark:
 		return benchmarkPayloadGenerator(size)
+	default:
+		return staticPayloadGenerator(size)
 	}
-	return staticPayloadGenerator(size)
 }
 
 // staticPayloadGenerator builds size random bytes once, and returns a generator that hands back
@@ -50,25 +61,43 @@ func benchmarkPayloadGenerator(size int) payloadGenerator {
 	}
 	padding := strings.Repeat("x", paddingSize)
 
-	const (
-		start  = `{"timestamp":` // opens the object, up to the timestamp value
-		middle = `,"padding":"`  // between the timestamp value and the padding
-		end    = `"}`            // closes the padding string and the object
-	)
+	return timestampPayloadGenerator([]byte(`,"padding":"` + padding + `"}`))
+}
 
-	// Room for the fixed text, the padding, and the longest possible timestamp (an int64 has
-	// at most 20 characters), so append never has to grow the slice.
-	capacity := len(start) + 20 + len(middle) + len(padding) + len(end)
+// timestampPayloadGenerator builds a generator that returns, for every call, a new slice with
+// {"timestamp":, the current time in Unix milliseconds, then rest. rest must finish the JSON
+// object, for example ,"padding":"xxx"} or }.
+func timestampPayloadGenerator(rest []byte) payloadGenerator {
+	const start = `{"timestamp":` // opens the object, up to the timestamp value
+
+	// Room for the fixed text, rest, and the longest possible timestamp (an int64 has at most
+	// 20 characters), so append never has to grow the slice.
+	capacity := len(start) + 20 + len(rest)
 
 	return func() []byte {
 		payload := make([]byte, 0, capacity)
 
 		payload = append(payload, start...)
 		payload = strconv.AppendInt(payload, time.Now().UnixMilli(), 10) // milliseconds since 1970, in decimal
-		payload = append(payload, middle...)
-		payload = append(payload, padding...)
-		payload = append(payload, end...)
+		payload = append(payload, rest...)
 
 		return payload
 	}
+}
+
+// afterTimestamp returns what follows the timestamp when --benchmark adds it to a payload
+// rendered from --json-template: the object without its opening {, after a comma, or just the
+// closing } for an empty object. CheckJSONTemplateForBenchmark has already checked that the
+// payload is a JSON object.
+func afterTimestamp(templatePayload []byte) []byte {
+	const whitespace = " \t\r\n"
+
+	// Drop the opening {.
+	inside := bytes.TrimLeft(templatePayload, whitespace)[1:]
+
+	if bytes.HasPrefix(bytes.TrimLeft(inside, whitespace), []byte("}")) {
+		return bytes.TrimLeft(inside, whitespace)
+	}
+
+	return append([]byte(","), inside...)
 }

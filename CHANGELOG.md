@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.2.0
+
+### New
+
+- `pub --json-template <file>`: send a JSON payload with fake data, written as a Go template
+  that calls [gofakeit](https://github.com/brianvoe/gofakeit) functions
+  (example: `{"name": "{{FirstName}}"}`) that will generate fake data. It is rendered
+  once at startup, text values are escaped for JSON, and the result must be valid JSON.
+  Works with `--benchmark`, which adds the timestamp as the first field. See "`--json-template`
+  payloads" in the README.
+
 ## 2.1.0
 
 ### New

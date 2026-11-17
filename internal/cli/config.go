@@ -43,6 +43,7 @@ type Publish struct {
 	AckTimeout         time.Duration
 	ConnectConcurrency int
 	PerClientStats     bool
+	JSONTemplate       string
 }
 
 // Subscribe holds the settings for the sub command.

@@ -2,7 +2,10 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -105,6 +108,81 @@ func TestPublishClientIDWithSingleClient(t *testing.T) {
 	calls := connector.recordedCalls()
 	if len(calls) != 1 || calls[0].clientID != "my-client" {
 		t.Fatalf("expected a single call with client ID %q, got %+v", "my-client", calls)
+	}
+}
+
+// writeTemplateFile writes a --json-template file in the test's own temporary folder.
+func writeTemplateFile(t *testing.T, content string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "template.json")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("writing template file: %v", err)
+	}
+	return path
+}
+
+// TestPublishJSONTemplate checks that every message sends the payload rendered once from
+// --json-template.
+func TestPublishJSONTemplate(t *testing.T) {
+	path := writeTemplateFile(t, `{"name": "{{FirstName}}", "battery": {{Number 0 100}}}`)
+	connector := &fakeConnector{}
+
+	_, err := runCommandWithConnector(t, context.Background(), connector,
+		"pub", "-c", "3", "-i", "0", "--json-template", path)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	publishes := connector.recordedPublishCalls()
+	if len(publishes) != 3 {
+		t.Fatalf("expected 3 publishes, got %d", len(publishes))
+	}
+
+	if !json.Valid(publishes[0].payload) {
+		t.Errorf("payload is not valid JSON: %s", publishes[0].payload)
+	}
+	for _, call := range publishes {
+		if string(call.payload) != string(publishes[0].payload) {
+			t.Errorf("expected every message to send the same payload, got %s and %s", publishes[0].payload, call.payload)
+		}
+	}
+}
+
+// TestPublishJSONTemplateErrors checks the errors that stop a --json-template run before any
+// client connects.
+func TestPublishJSONTemplateErrors(t *testing.T) {
+	validTemplate := writeTemplateFile(t, `{"name": "{{FirstName}}"}`)
+	withTimestamp := writeTemplateFile(t, `{"timestamp": 5, "name": "{{FirstName}}"}`)
+	notJSON := writeTemplateFile(t, `{"name": {{FirstName}}}`)
+
+	tests := []struct {
+		name        string
+		args        []string
+		wantInError string
+	}{
+		{"with --size", []string{"--json-template", validTemplate, "-s", "100"}, "when using a template the size can't be specified"},
+		{"with --benchmark and a timestamp field", []string{"--json-template", withTimestamp, "--benchmark"}, "don't use --benchmark with this template"},
+		{"not valid JSON", []string{"--json-template", notJSON}, "not valid JSON"},
+		{"missing file", []string{"--json-template", filepath.Join(t.TempDir(), "missing.json")}, "reading --json-template"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			connector := &fakeConnector{}
+
+			_, err := runCommandWithConnector(t, context.Background(), connector,
+				append([]string{"pub", "-c", "1", "-i", "0"}, tt.args...)...)
+			if err == nil {
+				t.Fatal("expected an error, got none")
+			}
+			if !strings.Contains(err.Error(), tt.wantInError) {
+				t.Errorf("error = %q, want it to contain %q", err, tt.wantInError)
+			}
+			if len(connector.recordedCalls()) != 0 {
+				t.Errorf("expected no client to connect, got %d connect calls", len(connector.recordedCalls()))
+			}
+		})
 	}
 }
 

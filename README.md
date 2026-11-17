@@ -354,6 +354,56 @@ With `--benchmark`, each payload is JSON instead of random bytes:
 versions, because some collectors read `timestamp` from it to measure latency. `sub --benchmark`
 reads it too.
 
+## `--json-template` payloads
+
+`--json-template <file>` sends a JSON payload with fake data from
+[gofakeit](https://github.com/brianvoe/gofakeit). The file is a Go template that calls gofakeit
+functions:
+
+```json
+{
+  "id": "{{UUID}}",
+  "name": "{{FirstName}} {{LastName}}",
+  "email": "{{Email}}",
+  "battery": {{Number 0 100}},
+  "temperature": {{Float64Range -20.0 45.0}},
+  "online": {{Bool}},
+  "quote": "{{Quote}}"
+}
+```
+
+```bash
+./bin/mqtt-load-generator pub -t /golang/pub -c 1000 --json-template payload.json
+```
+
+- The template is rendered once at startup. Every message from every client sends the same
+  payload.
+- Every gofakeit function that returns something can be used, by its Go name (`FirstName`,
+  `Number 0 100`). gofakeit's function list is in its README and on pkg.go.dev.
+- Text from gofakeit functions is escaped for JSON, so values with `"`, `\` or line breaks
+  (like `Quote`) still give valid JSON.
+- The rendered payload must be valid JSON. If it isn't, `pub` stops before connecting and
+  prints the payload. Functions that return objects, like `Address`, print as Go text, not
+  JSON, so they fail this check.
+- Go's template features work (`printf`, `if`, `range`, variables). gofakeit's 12
+  template-only helpers (`ToUpper`, `ToLower`, `ToInt`, `ToFloat`, `ToString`, `ToDate`,
+  `IntRange`, `SliceAny`, `SliceString`, `SliceUInt`, `SliceInt`, `SliceF32`) are not
+  available.
+- `--size` can't be used with `--json-template`.
+
+With `--benchmark`, `timestamp` is added as the first field and set to the publish time of
+each message, as in the `--benchmark` payload, so `sub --benchmark` reads it:
+
+```json
+{"timestamp":1699999999999,
+  "id": "4373c685-271c-44c4-87dc-007d36649a95",
+  ...
+}
+```
+
+The template must then be a JSON object without a `timestamp` field of its own; `pub` stops
+with an error otherwise.
+
 ## Docker
 
 Build:
@@ -428,10 +478,6 @@ kubectl delete jobs.batch -l app=mqtt-load-generator
 
 2.0.0 changes some flags and commands. The "2.0.0" section of `CHANGELOG.md` lists every
 change. 1.x releases remain available.
-
-## TODO
-
-- Support custom payloads
 
 ## Contributors
 

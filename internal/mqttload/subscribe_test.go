@@ -192,7 +192,7 @@ func TestRunSubscribe_BenchmarkLatency(t *testing.T) {
 
 	waitFor(t, time.Second, func() bool { return len(client.subscribeCalls()) == 1 })
 
-	client.deliver("load/test", newPayloadGenerator(100, true)())
+	client.deliver("load/test", newPayloadGenerator(100, true, nil)())
 	client.deliver("load/test", []byte("no timestamp here"))
 	client.deliver("load/test", fmt.Appendf(nil, `{"timestamp":%d,"padding":""}`, time.Now().Add(time.Hour).UnixMilli()))
 
@@ -230,7 +230,7 @@ func TestRunSubscribe_NoLatencyWithoutBenchmark(t *testing.T) {
 
 	waitFor(t, time.Second, func() bool { return len(client.subscribeCalls()) == 1 })
 
-	client.deliver("load/test", newPayloadGenerator(100, true)())
+	client.deliver("load/test", newPayloadGenerator(100, true, nil)())
 	client.deliver("load/test", []byte("no timestamp here"))
 
 	select {

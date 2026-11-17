@@ -27,6 +27,10 @@ type PublishOptions struct {
 	Suffix               bool
 	Benchmark            bool
 
+	// TemplatePayload is the payload rendered once from --json-template, sent by every client.
+	// nil without --json-template.
+	TemplatePayload []byte
+
 	InFlight           int
 	AckTimeout         time.Duration
 	ConnectConcurrency int
@@ -108,7 +112,7 @@ func runClientPublish(ctx context.Context, client Publisher, clientNumber int, o
 	publisher := &publishingClient{
 		client:          client,
 		topic:           clientTopic(options.Topic, clientNumber, options.Suffix),
-		generatePayload: newPayloadGenerator(options.Size, options.Benchmark),
+		generatePayload: newPayloadGenerator(options.Size, options.Benchmark, options.TemplatePayload),
 		pacer:           newPacer(options.Schedule, options.IntervalMilliseconds, random),
 		options:         options,
 		counters:        counters,

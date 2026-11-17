@@ -47,6 +47,7 @@ var publishFlagSpecs = []flagSpec{
 	{"inflight", ""},
 	{"ack-timeout", ""},
 	{"connect-concurrency", ""},
+	{"json-template", ""},
 }
 
 var subscribeFlagSpecs = []flagSpec{
